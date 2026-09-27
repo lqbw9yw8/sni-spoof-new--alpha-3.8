@@ -1,0 +1,1920 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a0d13">
+<meta name="color-scheme" content="dark">
+<title>dpi_guard — داشبورد کنترل</title>
+<style>
+  /* ── design tokens ──────────────────────────────────────────────────
+     One place for colour, spacing and motion so the whole page stays
+     consistent. Everything below references these; nothing hard-codes
+     a hex value twice. */
+  :root {
+    color-scheme: dark;
+
+    --bg: #0a0d13;
+    --surface: #111621;
+    --surface-2: #161c28;
+    --surface-3: #1d2433;
+    --line: #242c3b;
+    --line-strong: #333d51;
+
+    --text: #e8ebf2;
+    --text-dim: #a5aebf;
+    --text-faint: #79839a;
+
+    --accent: #5b8cff;
+    --accent-soft: rgba(91, 140, 255, .14);
+    --ok: #3ecf8e;
+    --ok-soft: rgba(62, 207, 142, .13);
+    --warn: #f2b13c;
+    --warn-soft: rgba(242, 177, 60, .13);
+    --danger: #f2637a;
+    --danger-soft: rgba(242, 99, 122, .13);
+
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 30px rgba(0, 0, 0, .3);
+
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 24px;
+    --sp-6: 32px;
+
+    --dur: 140ms;
+    --ease: cubic-bezier(.4, 0, .2, 1);
+
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: "Vazirmatn", "IRANSans", system-ui, -apple-system, "Segoe UI",
+            Tahoma, "Noto Sans Arabic", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Predictable tapping on touch devices (no 300 ms double-tap delay) and
+     an explicit tap colour instead of the default grey flash. */
+  button, summary, [role="tab"] { touch-action: manipulation; }
+  html { -webkit-tap-highlight-color: rgba(91, 140, 255, .25); }
+
+  html { scroll-padding-top: 100px; scroll-padding-bottom: 96px; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 400 13.5px/1.65 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3 { text-wrap: balance; margin: 0; }
+  a { color: var(--accent); }
+  code, kbd, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* Visible focus everywhere, and never an outline removed without a
+     replacement (the ring below is the replacement). */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  .skiplink {
+    position: absolute;
+    inset-inline-start: -9999px;
+    top: 0;
+    z-index: 100;
+    background: var(--accent);
+    color: #fff;
+    padding: var(--sp-2) var(--sp-4);
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  }
+  .skiplink:focus { inset-inline-start: var(--sp-3); }
+
+  /* ── app bar ─────────────────────────────────────────────────────── */
+  .appbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-5);
+    background: rgba(10, 13, 19, .88);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  .brand-mark {
+    display: grid;
+    place-items: center;
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    background: var(--accent-soft);
+    border: 1px solid rgba(91, 140, 255, .35);
+    color: var(--accent);
+    font-size: 15px;
+  }
+  .brand-name { font-size: 14px; font-weight: 700; letter-spacing: .2px; }
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .brand-sub { display: block; font-size: 11.5px; color: var(--text-faint); font-weight: 400; }
+  .appbar-status { display: flex; align-items: center; gap: var(--sp-2); }
+  .appbar-actions { display: flex; align-items: center; gap: var(--sp-2); margin-inline-start: auto; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .pill.on  { color: #9be7c4; border-color: rgba(62, 207, 142, .4); background: var(--ok-soft); }
+  .pill.off { color: #ffb3be; border-color: rgba(242, 99, 122, .4); background: var(--danger-soft); }
+
+  main { max-width: 1180px; margin: 0 auto; padding: var(--sp-5) var(--sp-5) var(--sp-6); }
+
+  /* ── buttons ─────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--surface-3);
+    color: var(--text);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    padding: 7px 14px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
+                color var(--dur) var(--ease);
+  }
+  .btn:hover:not(:disabled) { background: #26303f; border-color: #3d4a61; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-sm { padding: 5px 11px; font-size: 12.5px; }
+  .btn-ghost { background: transparent; border-color: var(--line); color: var(--text-dim); }
+  .btn-ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text); border-color: var(--line-strong); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn-primary:hover:not(:disabled) { background: #6f9aff; border-color: #6f9aff; }
+  .btn-primary:disabled { opacity: .4; }
+  .btn-danger { background: var(--danger-soft); border-color: rgba(242, 99, 122, .45); color: #ffc9d2; }
+  .btn-on { background: var(--ok-soft); border-color: rgba(62, 207, 142, .45); color: #b6f0cd; }
+
+  /* ── inputs ──────────────────────────────────────────────────────── */
+  input[type=text], input[type=number], select, textarea {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    padding: 7px 10px;
+    font: inherit;
+    font-size: 13px;
+    transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+  textarea { font-family: var(--mono); font-size: 12px; line-height: 1.6; resize: vertical; }
+  input[type=text]:hover, input[type=number]:hover, select:hover, textarea:hover { border-color: #3d4a61; }
+  input[type=text]:focus, input[type=number]:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  input.mono, .mono { font-family: var(--mono); }
+  select {
+    /* Windows dark mode renders a native <select> with a white list
+       unless both colours are set explicitly. */
+    background-color: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .search { flex: 1 1 240px; min-width: 0; }
+
+  /* Switch — a real checkbox, restyled. Keyboard + AT behaviour is
+     inherited from the native control. */
+  .switch { display: inline-flex; align-items: center; gap: var(--sp-2); cursor: pointer; }
+  .switch input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 38px;
+    height: 22px;
+    margin: 0;
+    flex: none;
+    border-radius: 999px;
+    background: var(--surface-3);
+    border: 1px solid var(--line-strong);
+    position: relative;
+    cursor: pointer;
+    transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  .switch input::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    inset-inline-start: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+  }
+  .switch input:checked { background: var(--accent-soft); border-color: var(--accent); }
+  .switch input:checked::after { transform: translateX(-16px); background: var(--accent); }
+  .switch-state { font-size: 12px; color: var(--text-dim); min-width: 42px; }
+  .switch input:checked ~ .switch-state { color: #9be7c4; }
+
+  /* ── notices ─────────────────────────────────────────────────────── */
+  .notice {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-inline-start: 3px solid var(--warn);
+    border-radius: var(--radius);
+    padding: var(--sp-3) var(--sp-4);
+    margin-bottom: var(--sp-4);
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .notice summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+  }
+  .notice summary::marker { color: var(--text-faint); }
+  .notice[open] summary { margin-bottom: var(--sp-3); }
+  .notice p { margin: 0 0 var(--sp-3); max-width: 78ch; }
+  .notice p:last-child { margin-bottom: 0; }
+  .notice b { color: var(--text); }
+  .kbd {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--bg);
+    border: 1px solid var(--line-strong);
+    border-radius: 5px;
+    padding: 1px 5px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* ── tabs ────────────────────────────────────────────────────────── */
+  .tabbar {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: var(--sp-5);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .tabbtn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-faint);
+    font: inherit;
+    font-size: 13px;
+    padding: var(--sp-3) var(--sp-4);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  }
+  .tabbtn:hover { color: var(--text); }
+  .tabbtn[aria-selected="true"] { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+  .tabpage { display: none; }
+  .tabpage.active { display: block; }
+
+  /* ── toolbar above the settings list ─────────────────────────────── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: var(--sp-4);
+    position: sticky;
+    top: 56px;
+    z-index: 20;
+  }
+  .toolbar-meta { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+
+  /* ── overview cards ──────────────────────────────────────────────── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-5);
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: var(--sp-3) var(--sp-4);
+    min-width: 0;
+  }
+  .card .k {
+    color: var(--text-faint);
+    font-size: 11px;
+    letter-spacing: .03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .card .v {
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 2px;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .card .v.sm { font-size: 13.5px; font-weight: 500; }
+
+  /* ── technique chips ─────────────────────────────────────────────── */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 3px 10px 3px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text-faint);
+  }
+  .chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); flex: none; }
+  .chip.on { color: #b6f0cd; border-color: rgba(62, 207, 142, .35); background: var(--ok-soft); }
+  .chip.on .dot { background: var(--ok); }
+
+  /* ── panels ──────────────────────────────────────────────────────── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: var(--sp-4);
+    overflow: hidden;
+  }
+  .panel > h2 {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-4);
+    font-size: 13.5px;
+    font-weight: 600;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .panel > h2 .cnt { color: var(--text-faint); font-size: 11.5px; font-weight: 400; }
+  .panel-note {
+    padding: var(--sp-3) var(--sp-4);
+    font-size: 12.5px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--line);
+    background: rgba(91, 140, 255, .04);
+  }
+
+  /* ── setting rows ────────────────────────────────────────────────── */
+  .rows { padding: var(--sp-1) 0; }
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-4);
+    align-items: start;
+    border-bottom: 1px solid rgba(36, 44, 59, .6);
+    transition: background var(--dur) var(--ease);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row-body { min-width: 0; }
+  .row-ctl { min-width: 0; }
+  .row.dirty { background: rgba(91, 140, 255, .07); box-shadow: inset 3px 0 0 var(--accent); }
+  .row.bad { background: rgba(242, 99, 122, .08); box-shadow: inset 3px 0 0 var(--danger); }
+  .row.warn { background: rgba(242, 177, 60, .07); box-shadow: inset 3px 0 0 var(--warn); }
+  .lab { font-weight: 600; font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+  .lab code {
+    font-size: 11px;
+    color: var(--text-faint);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 0 6px;
+    font-weight: 400;
+  }
+  .help { color: var(--text-faint); font-size: 12px; margin-top: 4px; max-width: 70ch; }
+  .tag {
+    font-size: 10.5px;
+    border-radius: 999px;
+    padding: 1px 8px;
+    border: 1px solid;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+  .tag.danger { color: #ffb3be; border-color: rgba(242, 99, 122, .4); background: var(--danger-soft); }
+  .tag.locked { color: var(--text-faint); border-color: var(--line); background: var(--bg); }
+  .err { color: var(--danger); font-size: 12px; margin-top: 5px; display: none; }
+  .row.bad .err { display: block; }
+  .row.warn .err { display: block; color: var(--warn); }
+
+  /* ── tables ──────────────────────────────────────────────────────── */
+  table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.t th, table.t td { text-align: start; padding: 7px var(--sp-4); border-bottom: 1px solid var(--line); }
+  table.t th { color: var(--text-faint); font-weight: 500; font-size: 11.5px; }
+  table.t td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  table.t tr:last-child td { border-bottom: 0; }
+  .scroll-box { max-height: 240px; overflow: auto; }
+
+  /* ── messages ────────────────────────────────────────────────────── */
+  #msg { min-height: 22px; margin-bottom: var(--sp-3); font-size: 13px; }
+  #msg.ok { color: var(--ok); }
+  #msg.bad { color: var(--danger); }
+  #msg.warn { color: var(--warn); }
+
+  /* ── sticky action bar (single instance — no duplicate toolbars) ──── */
+  .actionbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+    margin-top: var(--sp-5);
+    padding: var(--sp-3) var(--sp-4);
+    background: rgba(17, 22, 33, .94);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+  }
+  .actionbar .spacer { flex: 1 1 auto; }
+
+  .foot {
+    color: var(--text-faint);
+    font-size: 12px;
+    padding: var(--sp-5) 0 0;
+    text-align: center;
+  }
+
+  /* ── overlay ─────────────────────────────────────────────────────── */
+  #ovl {
+    position: fixed;
+    inset: 0;
+    background: rgba(6, 8, 12, .78);
+    backdrop-filter: blur(2px);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-4);
+    overscroll-behavior: contain;
+  }
+  #ovl .box {
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg);
+    padding: var(--sp-5);
+    max-width: 440px;
+    width: 100%;
+    box-shadow: var(--shadow);
+  }
+  #ovl h3 { font-size: 16px; margin-bottom: var(--sp-2); }
+  #ovl p { color: var(--text-dim); font-size: 12.5px; margin: 0 0 var(--sp-4); }
+  #ovl .actions { display: flex; gap: var(--sp-2); justify-content: flex-end; }
+
+  .hide { display: none !important; }
+
+  /* ── responsive ──────────────────────────────────────────────────── */
+  @media (max-width: 860px) {
+    .row { grid-template-columns: 1fr; gap: var(--sp-2); }
+    main { padding: var(--sp-4) var(--sp-4) var(--sp-6); }
+  }
+  @media (max-width: 700px) {
+    .appbar { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); flex-wrap: wrap; }
+    .brand-sub { display: none; }
+    .cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    .toolbar { position: static; }
+    .actionbar { position: static; }
+  }
+  @media (max-width: 430px) {
+    main { padding: var(--sp-3) var(--sp-3) var(--sp-6); }
+    .appbar-actions .btn { padding: 5px 9px; font-size: 12px; }
+    .cards { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+    .card { padding: var(--sp-2) var(--sp-3); }
+    .card .v { font-size: 15px; }
+    .row { padding: var(--sp-3); }
+    .panel > h2 { padding: var(--sp-3); font-size: 13px; }
+    .tabbtn { padding: var(--sp-2) var(--sp-3); font-size: 12.5px; }
+    .actionbar .btn { width: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      transition-duration: .01ms !important;
+      animation-duration: .01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+<a class="skiplink" href="#main">رفتن به محتوای اصلی</a>
+
+<header class="appbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">◈</span>
+    <span>
+      <h1 class="brand-name">dpi_guard</h1>
+      <span class="brand-sub">داشبورد کنترل محلی</span>
+    </span>
+  </div>
+  <div class="appbar-status">
+    <span class="pill" id="conn">در حال اتصال…</span>
+    <span class="pill" id="relaypill">رله: —</span>
+  </div>
+  <div class="appbar-actions">
+    <button class="btn btn-ghost btn-sm" id="btn_token">توکن</button>
+    <button class="btn btn-ghost btn-sm" id="btn_export">خروجی گرفتن</button>
+    <button class="btn btn-ghost btn-sm" id="btn_import">وارد کردن</button>
+  </div>
+</header>
+
+<main id="main">
+  <div id="msg" role="status" aria-live="polite"></div>
+
+  <div id="ovl" class="hide" role="dialog" aria-modal="true" aria-labelledby="ovl_title">
+    <div class="box">
+      <h3 id="ovl_title">توکن داشبورد</h3>
+      <p>
+        توکن در شروع برنامه در لاگ/کنسول چاپ می‌شود (<span class="kbd">web UI token</span>).
+        اگر در کانفیگ تنظیم نشده باشد، برنامه یک توکن تصادفی ۱۲۸ بیتی می‌سازد.
+        توکن فقط روی <span class="kbd">127.0.0.1</span> ارسال می‌شود.
+      </p>
+      <label class="help" for="tok" style="margin-bottom:6px">توکن (Bearer)</label>
+      <input type="text" class="mono" id="tok" placeholder="توکن را اینجا بگذارید"
+             autocomplete="off" spellcheck="false">
+      <div class="actions" style="margin-top:16px">
+        <button class="btn btn-ghost" id="tok_clear">پاک کردن</button>
+        <button class="btn btn-primary" id="tok_save">ذخیره</button>
+      </div>
+    </div>
+  </div>
+
+  <details class="notice" id="safety">
+    <summary>پیش از هر چیز: این VPN نیست — نکته‌های مهم یک‌بار بخوانید</summary>
+    <p>
+      <b>این VPN نیست.</b>
+      IP مقصد روی سیم دیده می‌شود؛ تنها هدف، فریب DPI با تزریق یک ClientHello جعلی
+      با SNI بی‌خطر است. کلاینت محلی را به
+      <b>127.0.0.1:<span id="qr_lport">40443</span></b> وصل کنید و SNI کلاینت را روی
+      <b>دامنهٔ واقعی</b> بگذارید (نه دامنهٔ جعلی). تغییرات با <b>ذخیره</b> در
+      <span class="kbd">dpi_guard.toml</span> نوشته می‌شوند و در حدود ۱ ثانیه
+      بارگذاری مجدد داغ می‌شوند.
+    </p>
+    <p id="dns_leak_note">
+      <b>نشتی DNS:</b>
+      در Windows، مسدودسازی پورت ۵۳ با WFP واقعی و fail-closed است (به‌جز resolver محلی
+      127.0.0.1 و ::1). اگر WFP نصب نشود، برنامه اصلاً ادامه نمی‌دهد.
+      قوی‌ترین تنظیم این‌جا: <code>relay_connect_host</code> را یک <b>IP مستقیم</b> بگذارید.
+      اگر از v2rayN استفاده می‌کنید، DNS را <b>داخل خود v2rayN</b> تنظیم کنید (Basic DNS Settings):
+      Remote DNS = یک آدرس DoH مثل <span class="kbd">https://dns.adguard.com/dns-query</span>،
+      Bootstrap DNS = یک IP (مثلاً <span class="kbd">94.140.14.14</span>).
+      آن تب‌ها مال v2rayN هستند، نه این داشبورد — این صفحه فقط DoH خود رله را پوشش می‌دهد.
+    </p>
+  </details>
+
+  <nav class="tabbar" id="tabbar" role="tablist" aria-label="بخش‌های داشبورد"></nav>
+
+  <!-- ================= نمای کلی ================= -->
+  <section class="tabpage" id="tab-overview" role="tabpanel" tabindex="0" aria-labelledby="tab-overview-btn">
+    <h2 class="sr-only">نمای کلی</h2>
+    <div class="cards" id="cards"></div>
+
+    <div class="panel">
+      <h2>اقدام سریع<span class="cnt">تغییر را علامت می‌زند؛ ذخیره با شماست</span></h2>
+      <div style="padding:16px; display:flex; flex-wrap:wrap; gap:8px" id="presets"></div>
+    </div>
+
+    <div class="panel">
+      <h2>تکنیک‌های فعال<span class="cnt" id="feature_count"></span></h2>
+      <div style="padding:16px">
+        <div class="chips" id="tech"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>پروفایل جهش<span class="cnt">بلافاصله اعمال می‌شود</span></h2>
+      <div class="panel-note">
+        تغییر پروفایل از مسیر <span class="kbd">POST /api/profile</span> می‌رود و روی
+        جریان‌های جدید همان لحظه اثر می‌گذارد — نیازی به ذخیرهٔ تنظیمات ندارد.
+      </div>
+      <div style="padding:16px; display:flex; flex-wrap:wrap; gap:8px" id="profiles"></div>
+    </div>
+
+    <div class="panel">
+      <h2>امتیاز استراتژی<span class="cnt" id="s_cnt"></span></h2>
+      <div class="scroll-box">
+        <table class="t">
+          <thead><tr><th>دامنه | تکنیک</th><th>امتیاز</th></tr></thead>
+          <tbody id="scores"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>SNIهای اخیر<span class="cnt">فقط هش salted</span></h2>
+      <div style="padding:16px">
+        <div class="help" style="margin-bottom:8px">
+          نام دامنهٔ خام هرگز نمایش داده نمی‌شود؛ فقط یک هش salted به‌ازای هر اجرا.
+        </div>
+        <div id="domains" class="mono" style="font-size:12px; color:var(--text-dim); overflow-wrap:anywhere"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= تنظیمات (چهار تب) ================= -->
+  <div class="toolbar hide" id="settings-toolbar">
+    <input class="search" type="text" id="q" aria-label="جست‌وجو در همهٔ تنظیمات"
+           placeholder="جست‌وجو در همهٔ تنظیمات… (مثلاً sni، ttl، relay)"
+           autocomplete="off" spellcheck="false">
+    <button class="btn btn-sm" id="btn_changed">فقط تغییرکرده‌ها</button>
+    <span class="toolbar-meta" id="filter_meta"></span>
+  </div>
+
+  <section class="tabpage" id="tab-proxy" role="tabpanel" tabindex="0" aria-labelledby="tab-proxy-btn">
+    <div id="fields-proxy"></div>
+  </section>
+
+  <section class="tabpage" id="tab-traffic" role="tabpanel" tabindex="0" aria-labelledby="tab-traffic-btn">
+    <div id="fields-traffic"></div>
+  </section>
+
+  <section class="tabpage" id="tab-connection" role="tabpanel" tabindex="0" aria-labelledby="tab-connection-btn">
+    <div id="fields-connection"></div>
+  </section>
+
+  <section class="tabpage" id="tab-advanced" role="tabpanel" tabindex="0" aria-labelledby="tab-advanced-btn">
+    <div id="fields-advanced"></div>
+  </section>
+
+  <!-- ================= TOML خام ================= -->
+  <section class="tabpage" id="tab-toml" role="tabpanel" tabindex="0" aria-labelledby="tab-toml-btn">
+    <div class="panel">
+      <h2>ویرایشگر پیشرفتهٔ TOML<span class="cnt">توکن و پین‌ها redacted هستند</span></h2>
+      <div style="padding:16px">
+        <div class="help" style="margin-bottom:12px">
+          این متن روی تنظیمات فعلی merge می‌شود. مقدار خالی برای
+          <code>web_ui_token</code> و <code>win_divert_sha256</code> یعنی «تغییر نده» —
+          خالی‌گذاشتنشان توکن یا پین‌های شما را پاک نمی‌کند.
+        </div>
+        <label class="help" for="toml">متن کامل کانفیگ (TOML)</label>
+        <textarea id="toml" rows="16" spellcheck="false" aria-label="متن کامل کانفیگ (TOML)"></textarea>
+        <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap">
+          <button class="btn" id="btn_toml_load">بارگذاری از سرور</button>
+          <button class="btn" id="btn_toml_validate">اعتبارسنجی</button>
+          <button class="btn btn-primary" id="btn_toml_save">ذخیرهٔ این متن</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="actionbar">
+    <span class="pill" id="dirtypill" aria-live="polite">0 تغییر</span>
+    <span class="spacer"></span>
+    <button class="btn" id="btn_live">به‌روزرسانی زنده: روشن</button>
+    <button class="btn btn-ghost" id="btn_revert">برگرداندن تغییرات</button>
+    <button class="btn" id="btn_validate">اعتبارسنجی (بدون ذخیره)</button>
+    <button class="btn btn-primary" id="btn_save">ذخیرهٔ تنظیمات</button>
+  </div>
+
+  <p class="foot">
+    داشبورد فقط روی <span class="kbd">127.0.0.1</span> است — هر مسیر
+    <span class="kbd">/api/*</span> به توکن Bearer نیاز دارد.
+  </p>
+</main>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ * Schema — EVERY field of config::Settings is declared here.
+ * `src/webui.rs` has a unit test asserting this list matches the Rust
+ * struct 1:1, so a new Settings field cannot silently go uneditable.
+ * ------------------------------------------------------------------ */
+
+const TABS = [
+  { id: "overview",   title: "نمای کلی" },
+  { id: "proxy",       title: "پروکسی و SNI" },
+  { id: "traffic",     title: "ترافیک" },
+  { id: "connection",  title: "اتصال" },
+  { id: "advanced",    title: "پیشرفته" },
+  { id: "toml",        title: "TOML خام" },
+];
+
+/* Which settings-section ids appear on which tab. "toml" and "overview"
+ * render their own fixed content and don't pull from SECTIONS/FIELDS. */
+const TAB_OF_SECTION = {
+  core: "proxy", fp: "proxy", antifp: "proxy", isp: "proxy",
+  scope: "traffic", tls: "traffic", desync: "traffic",
+  relay: "connection", dns: "connection",
+  ui: "advanced", ops: "advanced", tools: "advanced",
+};
+
+const SECTIONS = [
+  { id: "core",    title: "جهش و ارسال اصلی" },
+  { id: "fp",      title: "اثر انگشت و استتار" },
+  { id: "antifp",  title: "ضد اثر انگشت پیشرفته" },
+  { id: "isp",     title: "پروفایل اپراتور و اسکنر" },
+  { id: "scope",   title: "محدودهٔ رهگیری پورت‌ها" },
+  { id: "tls",     title: "TLS / تکه‌سازی / ناهمگام‌سازی" },
+  { id: "desync",  title: "ناهمگام‌سازی پیشرفته (GoodbyeDPI/zapret)" },
+  { id: "relay",   title: "حالت رله (سبک patterniha)" },
+  { id: "dns",     title: "DNS و DoH (فقط رله — نه v2rayN)" },
+  { id: "ui",      title: "داشبورد وب" },
+  { id: "ops",     title: "کلید قطع، درایور و عملیات" },
+  { id: "tools",   title: "ابزارها و یکپارچه‌سازی" },
+];
+
+const FIELDS = [
+  // ---- core ----
+  { k: "mutation_profile", s: "core", t: "enum", lbl: "پروفایل جهش",
+    opts: ["Stealth", "ChinaGfw", "RussiaDpi", "Aggressive", "ChinaRegional", "Henan", "NestedCloak"],
+    help: "مجموعهٔ تکنیک‌های جهش SNI. از دکمه‌های تب «نمای کلی» هم قابل تغییر است. NestedCloak = پوشش تو در تو: SNI پوششی + نام واقعی در افزونهٔ خصوصی + تقسیم ۳ بخشی TCP." },
+  { k: "decoy_ttl", s: "core", t: "int", lbl: "TTL پکت جعلی",
+    min: 1, max: 64, help: "باید آن‌قدر کم باشد که قبل از رسیدن به سرور واقعی بمیرد، ولی به DPI برسد. تعداد هاپ تا DPI را با tracert اندازه بگیرید." },
+  { k: "idle_timeout_secs", s: "core", t: "int", lbl: "تایم‌اوت بی‌کاری جریان (ثانیه)",
+    min: 1, max: 86400, help: "مدت نگه‌داشتن وضعیت یک جریان بدون ترافیک." },
+  { k: "fragment_chunk_size", s: "core", t: "int", lbl: "اندازهٔ تکهٔ تکه‌سازی",
+    min: 0, max: 16384, help: "۰ = ClientHello را TCP-segment نکن. مقدار ۱ ممنوع است (اثر انگشت‌پذیر). یا ۰، یا ۸ تا ۱۶۳۸۴." },
+  { k: "enable_decoys", s: "core", t: "bool", lbl: "پکت جعلی (decoy)",
+    help: "یک ClientHello جعلی با TTL محدود و checksum خراب تزریق می‌کند." },
+  { k: "enable_sni_fragmentation", s: "core", t: "bool", lbl: "تکه‌کردن SNI",
+    help: "فیلد SNI را تکه می‌کند تا DPI نتواند آن را بخواند." },
+  { k: "enable_combined_fragmentation", s: "core", t: "bool", lbl: "تکه‌سازی ترکیبی",
+    help: "چند روش تقسیم را در یک جریان ترکیب می‌کند." },
+  { k: "enable_http_host_tricks", s: "core", t: "bool", lbl: "ترفند HTTP Host",
+    help: "خط Host: را در ترافیک HTTP متن‌باز می‌شکند. فقط جریان‌های متن‌باز." },
+
+  // ---- scope ----
+  { k: "intercept_all_tcp", s: "scope", t: "bool", lbl: "رهگیری همهٔ پورت‌های TCP", danger: true,
+    help: "همهٔ TCP را به‌جز 22/53/3389 رهگیری می‌کند. خطرناک — برای تست. برای استفاده از فهرست پورت‌ها خاموشش کنید." },
+  { k: "intercept_all_udp", s: "scope", t: "bool", lbl: "رهگیری همهٔ پورت‌های UDP", danger: true,
+    help: "همهٔ UDP را به‌جز 22/53/3389 رهگیری می‌کند (برای QUIC). خطرناک — برای تست." },
+  { k: "intercept_ports", s: "scope", t: "intlist", lbl: "فهرست پورت‌های رهگیری‌شده",
+    placeholder: "443,8443,2053,2083,2087,2096,8080,80", max: 100,
+    help: "وقتی گزینه‌های بالا خاموش باشند استفاده می‌شود. خالی = فقط 443. پورت ۰ مجاز نیست؛ حداکثر ۱۰۰ مورد. 22/53/3389 همیشه نادیده گرفته می‌شوند." },
+
+  // ---- relay ----
+  { k: "relay_enabled", s: "relay", t: "bool", lbl: "فعال‌سازی رله",
+    help: "روی 127.0.0.1:<port> می‌نشیند و به یک مقصد ثابت رله می‌کند. کلاینت نمی‌تواند مقصد را عوض کند (این پروکسی باز نیست)." },
+  { k: "relay_listen_port", s: "relay", t: "int", lbl: "پورت شنود رله (هر عددی — همان را در v2rayN هم بگذار)",
+    min: 1, max: 65535, help: "هر پورت آزاد. همان عدد را در v2rayN بگذارید: Address=127.0.0.1، Port=همین عدد. نباید با پورت داشبورد یکی باشد. از 10808/10809/10853 (پورت‌های خود v2rayN) پرهیز کنید. 22/53/3389 قابل رهگیری نیستند." },
+  { k: "relay_connect_host", s: "relay", t: "str", lbl: "مقصد واقعی (دامنه یا IP)", mono: true,
+    placeholder: "server.example.com یا 1.2.3.4",
+    help: "دامنه کافی است — مثل patterniha خودش IP را از راه DoH (نه UDP/53) پیدا می‌کند. IP دستی لازم نیست. اگر IP بگذارید، برای این مقصد DNS اصلاً زده نمی‌شود. loopback/link-local/metadata رد می‌شوند." },
+  { k: "relay_connect_port", s: "relay", t: "int", lbl: "پورت مقصد واقعی",
+    min: 1, max: 65535, help: "پیش‌فرض ۴۴۳." },
+  { k: "relay_fake_sni", s: "relay", t: "str", lbl: "SNI جعلی (بی‌خطر)", mono: true,
+    placeholder: "www.microsoft.com",
+    help: "نامی که در ClientHello جعلی به DPI نشان داده می‌شود. فقط حرف/رقم/نقطه/خط تیره/زیرخط." },
+  { k: "relay_resolve_doh", s: "relay", t: "bool", lbl: "یافتن مقصد از راه DoH",
+    help: "اگر مقصد دامنه باشد، از راه DoH حل می‌شود (بدون DNS متن‌باز). IP مستقیم هیچ‌وقت DNS نمی‌زند." },
+  { k: "relay_mutate_real_sni", s: "relay", t: "bool", lbl: "جهش SNI واقعی هم",
+    help: "بعد از handshake جعلی، ClientHello واقعی هم از خط جهش عبور می‌کند." },
+  { k: "relay_emit_decoy", s: "relay", t: "bool", lbl: "ارسال پکت جعلی همراه تزریق",
+    help: "یک نسخهٔ TTL-محدود و checksum-خراب از ClientHello جعلی هم ارسال می‌کند." },
+  { k: "relay_require_inject", s: "relay", t: "bool", lbl: "fail-closed (الزام تزریق)", danger: true,
+    help: "اگر ClientHello جعلی ACK نشود، اتصال بسته می‌شود تا SNI واقعی هرگز روی سیم نرود. خاموش‌کردن این گزینه آن محافظت را حذف می‌کند." },
+
+  // ---- tls ----
+  { k: "enable_tls_record_fragmentation", s: "tls", t: "bool", lbl: "تکه‌سازی رکورد TLS",
+    help: "ClientHello را به چند رکورد TLS به اندازهٔ tls_record_chunk_size بایت تقسیم می‌کند." },
+  { k: "tls_record_chunk_size", s: "tls", t: "int", lbl: "اندازهٔ تکهٔ رکورد TLS (بایت)",
+    min: 0, max: 16384,
+    help: "۰ = استفاده از اندازهٔ تکهٔ تکه‌سازی. حداکثر ۱۶۳۸۴ (یک رکورد TLS)." },
+  { k: "enable_frag_by_sni", s: "tls", t: "bool", lbl: "برش دقیقاً قبل از SNI",
+    help: "مرز رکورد TLS را دقیقاً قبل از نام SNI می‌گذارد تا DPI نتواند آن را بخواند." },
+  { k: "enable_frag_mid_sni", s: "tls", t: "bool", lbl: "برش وسطِ نام SNI",
+    help: "رکورد TLS را وسط نام SNI می‌شکند تا نام بین دو رکورد پاره شود؛ هیچ رکوردی به‌تنهایی نام کامل را ندارد." },
+  { k: "autottl_scale_a1", s: "tls", t: "int", lbl: "AutoTTL مقیاس a1",
+    min: 0, max: 64, help: "کران پایین TTL مقیاس‌شده. ۰ = استفاده از تعداد هاپ یادگرفته‌شده بدون تغییر." },
+  { k: "autottl_scale_a2", s: "tls", t: "int", lbl: "AutoTTL مقیاس a2",
+    min: 0, max: 64, help: "کران بالای TTL مقیاس‌شده. حداکثر ۶۴؛ سرور فقط ۰ تا ۳۲ را می‌پذیرد." },
+  { k: "autottl_scale_max", s: "tls", t: "int", lbl: "AutoTTL سقف مقیاس",
+    min: 0, max: 64, help: "سقف قطعی که بعد از مقیاس‌دهی اعمال می‌شود. حداکثر ۶۴." },
+  { k: "enable_autottl", s: "tls", t: "bool", lbl: "AutoTTL",
+    help: "TTL پکت جعلی را از تعداد هاپ ورودی به این ماشین یاد می‌گیرد." },
+  { k: "autottl_delta", s: "tls", t: "int", lbl: "اختلاف AutoTTL",
+    min: 0, max: 32, help: "مقدار مثبت یک هاپ جلوتر می‌برد. سرور فقط ۰ تا ۳۲ را می‌پذیرد." },
+
+  // ---- fingerprint / stealth ----
+  { k: "enable_utls_fingerprint", s: "fp", t: "bool", lbl: "اثر انگشت uTLS (JA3/JA4)",
+    help: "اثر انگشت ClientHello را بر اساس پروفایل مرورگر می‌چرخاند." },
+  { k: "utls_browser", s: "fp", t: "enum", lbl: "مرورگر جعل‌شده",
+    opts: ["chrome", "firefox", "safari", "edge", "random"], help: "قالب اثر انگشت + GREASE." },
+  { k: "enable_ech_grease", s: "fp", t: "bool", lbl: "ECH GREASE",
+    help: "اکستنشن Encrypted Client Hello را با نوع واقعی 0xFE0D و payload تصادفی به هر هللو اضافه می‌کند تا دسته‌بندی «ECH دارد/ندارد» بی‌اثر شود." },
+  { k: "enable_real_ech", s: "fp", t: "bool", lbl: "ECH واقعی",
+    help: "SNI واقعی را داخل یک ClientHello داخلی با HPKE (X25519 + ChaCha20Poly1305) مهر می‌کند؛ بیرون فقط public_name دیده می‌شود. سرور مقصد باید ECH پشتیبانی کند." },
+  { k: "real_ech_config_hex", s: "fp", t: "str", lbl: "ECHConfig (هگز)", mono: true,
+    placeholder: "هگزِ فیلد ech از رکورد DNS HTTPS مقصد",
+    help: "مقدار بایتی «ech» در رکورد HTTPS/SVCB دامنهٔ مقصد (مثلاً با dig). فقط وقتی enable_real_ech روشن است خوانده می‌شود." },
+  { k: "enable_padding_inflation", s: "fp", t: "bool", lbl: "بادکردن تصادفی اندازه (پدینگ)",
+    help: "هر اتصال یک افزونهٔ پدینگ TLS با طول تصادفی (۶۴ تا ۳۸۴ بایت) می‌گیرد تا اثر انگشت‌های اندازهٔ ثابت و استخراج‌کننده‌های آفست‌محور خراب شوند." },
+  { k: "enable_md5sig_fooling", s: "fp", t: "bool", lbl: "فول MD5SIG (گزینهٔ TCP 19)", danger: true,
+    help: "سبک zapret. روی بعضی سرورها اتصال را می‌شکند؛ فقط وقتی روشنش کنید که دلیلش را می‌دانید." },
+  { k: "enable_geedge_evasion", s: "fp", t: "bool", lbl: "دورزدن Geedge",
+    help: "padding اضافه، SNI به‌صورت IP مستقیم و ترفندهای مشابه." },
+  { k: "enable_sni_disguise", s: "fp", t: "bool", lbl: "استتار SNI",
+    help: "شکل واقعی فیلد SNI را پنهان می‌کند." },
+  { k: "fronting_benign_sni", s: "fp", t: "str", lbl: "SNI بی‌خطر برای fronting", mono: true,
+    placeholder: "www.microsoft.com (خالی = بدون fronting)",
+    help: "حداکثر ۲۵۳ نویسه؛ فقط حرف/رقم/نقطه/خط تیره/زیرخط." },
+  { k: "enable_swap_foolers", s: "fp", t: "bool", lbl: "فولر جابه‌جا (RST/SYN-ACK جعلی)", danger: true,
+    help: "پکت جعلی با مقصد جابه‌جاشده. ممکن است IDS/EDR علامتش بزند. پیش‌فرض خاموش." },
+  { k: "enable_quic_port_bypass", s: "fp", t: "bool", lbl: "دورزدن QUIC با تغییر پورت",
+    help: "پورت UDP جریان QUIC را جابه‌جا می‌کند تا از فیلتر پورت‌محور رد شود." },
+  { k: "quic_bypass_use_low_port", s: "fp", t: "bool", lbl: "QUIC: استفاده از پورت پایین",
+    help: "پورت جایگزین QUIC را از بازهٔ پایین انتخاب می‌کند." },
+
+  // ---- dns ----
+  { k: "doh_server", s: "dns", t: "str", lbl: "آدرس سرور DoH", mono: true,
+    placeholder: "https://cloudflare-dns.com/dns-query",
+    help: "باید https:// باشد، بدون user:pass@ و هرگز loopback/metadata. مقدار پیش‌فرض hostname دارای گواهی TLS است و آدرس‌های Cloudflare را pin می‌کند." },
+  { k: "trusted_dns", s: "dns", t: "str", lbl: "DNS redirect legacy (غیرفعال)", mono: true,
+    placeholder: "Unsupported — leave empty",
+    help: "این گزینه عمداً fail-closed است: redirect واقعی DNS به signed WFP kernel callout نیاز دارد که همراه برنامه نیست. برای DoH از doh_server یا relay_resolve_doh استفاده کنید؛ مقدار غیرخالی ذخیره نمی‌شود." },
+  { k: "rotate_ips", s: "dns", t: "strlist", lbl: "فهرست چرخش IP مقصد", mono: true,
+    placeholder: "1.1.1.1,1.0.0.1",
+    help: "فقط در relay mode: هر اتصال جدید IP بعدیِ همین فهرست اعتبارسنجی‌شده را می‌گیرد؛ جریان‌های شفاف وسط اتصال بازنویسی نمی‌شوند. در transparent mode خالی بگذارید." },
+  { k: "sni_only", s: "dns", t: "strlist", lbl: "فقط این SNIها (allow-list)", mono: true,
+    placeholder: "*.example.com,keep.org",
+    help: "اگر خالی نباشد، جهش/تزریق فقط روی SNIهای منطبق اعمال می‌شود. الگو: دقیق یا *.example.com." },
+  { k: "sni_except", s: "dns", t: "strlist", lbl: "هرگز این SNIها (deny-list)", mono: true,
+    placeholder: "bank.example.com",
+    help: "این SNIها هرگز جهش/رله نمی‌شوند. deny بر allow اولویت دارد." },
+
+  // ---- web ui ----
+  { k: "enable_web_ui", s: "ui", t: "bool", lbl: "فعال‌سازی داشبورد وب", restart: true,
+    help: "فقط 127.0.0.1. برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "web_ui_port", s: "ui", t: "int", lbl: "پورت داشبورد", restart: true,
+    min: 1, max: 65535, help: "پیش‌فرض ۹۰۹۰. نباید با پورت رله یکی باشد. برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "web_ui_token", s: "ui", t: "str", lbl: "توکن داشبورد", restart: true, mono: true, secret: true,
+    placeholder: "۱۶ نویسه یا بیشتر — خالی = تغییر نده",
+    help: "سرور هرگز مقدار فعلی را برنمی‌گرداند (redacted). خالی‌گذاشتن، توکن فعلی را نگه می‌دارد. حداقل ۱۶ نویسهٔ ASCII قابل چاپ، بدون \" یا \\. توکن جدید فقط بعد از اجرای مجدد برنامه اعمال می‌شود." },
+
+  // ---- ops ----
+  { k: "enable_kill_switch", s: "ops", t: "bool", lbl: "کلید قطع (فقط آماده‌سازی)", restart: true, danger: true,
+    help: "دستور ساخته و پاک‌سازی می‌شود ولی هرگز خودکار اجرا نمی‌شود. فقط در لاگ چاپ می‌شود. آماده‌سازی فقط در شروع انجام می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "kill_switch_adapter", s: "ops", t: "str", lbl: "نام آداپتور شبکه", restart: true, mono: true,
+    placeholder: "Wi-Fi یا Ethernet",
+    help: "فقط حرف/رقم/فاصله/خط تیره/زیرخط، تا دستور قابل تزریق نباشد. وقتی کلید قطع روشن است الزامی است. فقط در شروع خوانده می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "win_divert_sha256", s: "ops", t: "strlist", lbl: "پین SHA-256 درایور WinDivert", restart: true, mono: true, secret: true,
+    placeholder: "۶۴ نویسهٔ هگز — خالی = تغییر نده",
+    help: "محافظت زنجیرهٔ تأمین: خالی = بدون pin؛ در غیر این صورت دقیقاً دو هش به‌ترتیب WinDivert.dll و WinDivert64.sys وارد کنید. راستی‌آزمایی فقط در شروع انجام می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  // ---- isp: ISP profile & scanner ----
+  { k: "isp_profile", s: "isp", t: "enum", lbl: "پروفایل اپراتور", restart: true,
+    opts: ["auto", "mci", "irancell", "russia", "china", "generic"],
+    help: "تنظیمات پیش‌فرض به‌تفکیک اپراتور. auto = بدون تغییر. ادغام پروفایل فقط در شروع انجام می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "enable_sni_scanner", s: "isp", t: "bool", lbl: "اسکنر SNI و تست پینگ", restart: true,
+    help: "بررسی و رتبه‌بندی پینگ و تأخیر دامنه‌ها و IPهای لبهٔ CDN و انتخاب خودکار کمترین تأخیر برای SNI Spoofing. برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "sni_candidates", s: "isp", t: "strlist", lbl: "فهرست نامزدهای SNI", restart: true,
+    placeholder: "www.microsoft.com,www.apple.com",
+    help: "خالی = استفاده از فهرست پیش‌فرض داخلی. فقط در شروع خوانده می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "edge_candidates", s: "isp", t: "strlist", lbl: "IPهای لبهٔ CDN", restart: true,
+    placeholder: "104.16.0.1,1.1.1.1",
+    help: "آدرس‌های CDN اضافی برای اسکن. فقط در شروع خوانده می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "sni_rotation_mode", s: "isp", t: "enum", lbl: "حالت چرخش SNI", restart: true,
+    opts: ["round_robin", "weighted_random", "lru"],
+    help: "چگونگی انتخاب SNI از مجموعه. round_robin، weighted_random یا lru (کم‌کاربردترین). فقط در شروع خوانده می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  // ---- antifp: Anti-fingerprint ----
+  { k: "enable_anti_fingerprint", s: "antifp", t: "bool", lbl: "فعال‌سازی ضد اثر انگشت",
+    help: "مجموعهٔ تکنیک‌های ضد اثر انگشت: زمان‌بندی، اندازهٔ پکت، IP-ID." },
+  { k: "injection_delay_min_ms", s: "antifp", t: "int", lbl: "حداقل تأخیر تزریق (ms)", restart: true,
+    min: 0, max: 1000, help: "حداقل jitter قبل از تزریق ClientHello جعلی. مقادیر فقط هنگام ساخت حلقهٔ capture خوانده می‌شوند؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "injection_delay_max_ms", s: "antifp", t: "int", lbl: "حداکثر تأخیر تزریق (ms)", restart: true,
+    min: 0, max: 5000, help: "حداکثر jitter. باید >= حداقل باشد. مقادیر فقط هنگام ساخت حلقهٔ capture خوانده می‌شوند؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "max_packet_padding", s: "antifp", t: "int", lbl: "حداکثر padding تصادفی (بایت)",
+    min: 0, max: 256, help: "۰ = خاموش. اندازهٔ پکت‌ها را تصادفی می‌کند." },
+  { k: "randomize_ip_id", s: "antifp", t: "bool", lbl: "تصادفی‌سازی IP-ID",
+    help: "فیلد ID هدر IPv4 را تصادفی می‌کند." },
+  { k: "randomize_packet_size", s: "antifp", t: "bool", lbl: "تصادفی‌سازی اندازهٔ پکت",
+    help: "از max_packet_padding استفاده می‌کند." },
+  { k: "enable_fake_with_sni", s: "antifp", t: "bool", lbl: "جعلی با SNI (تقلید مرورگر)",
+    help: "یک ClientHello جعلی می‌سازد که از مرورگر واقعی (Firefox/Chrome) تقلید می‌کند." },
+  { k: "fake_browser", s: "antifp", t: "enum", lbl: "مرورگر تقلیدشده",
+    opts: ["firefox", "chrome", "safari", "edge", "random"] },
+  // ---- desync: Advanced desync ----
+  { k: "enable_reverse_frag", s: "desync", t: "bool", lbl: "تکه‌سازی معکوس",
+    danger: true,
+    help: "سگمنت‌های TCP را با ترتیب معکوس می‌فرستد (GoodbyeDPI/zapret). ممکن است بعضی سرورها را بشکند." },
+  { k: "enable_wrong_seq", s: "desync", t: "bool", lbl: "wrong-seq (GoodbyeDPI)",
+    help: "شمارهٔ ترتیب پکت جعلی را بیرون از پنجرهٔ دریافت می‌گذارد تا سرور واقعی آن را بیندازد ولی DPI آن را بخواند. پیش‌فرض روشن: خاموش‌کردنش پکت جعلی را به یک پکت واقعی تبدیل می‌کند." },
+  { k: "enable_wrong_checksum", s: "desync", t: "bool", lbl: "wrong-checksum (GoodbyeDPI)",
+    help: "checksum لایهٔ ۴ پکت جعلی را خراب می‌کند تا استک مقصد آن را دور بیندازد. پیش‌فرض روشن." },
+  { k: "enable_oob_injection", s: "desync", t: "bool", lbl: "تزریق دادهٔ OOB (zapret)",
+    danger: true,
+    help: "تزریق دادهٔ out-of-band — ممکن است بعضی سرورها را بشکند." },
+  { k: "enable_adaptive_desync", s: "desync", t: "bool", lbl: "ناهمگام‌سازی تطبیقی",
+    help: "حالت ناهمگام‌سازی را برای هر اتصال انتخاب می‌کند، نه یک حالت ثابت." },
+  { k: "enable_strategy_rotation", s: "desync", t: "bool", lbl: "چرخش استراتژی هر اتصال",
+    help: "بین تکنیک‌هایی که برای آن دامنه امتیاز مثبت دارند تصادفیِ وزن‌دار انتخاب می‌کند و اگر پروفایل پیکربندی‌شده امتیاز منفی گرفت از نردبان ارتقا بالا می‌رود؛ امتیازها هر ۳۲ رخداد بازخورد به‌سمت صفر پوسیده می‌شوند." },
+  { k: "enable_hostdot", s: "desync", t: "bool", lbl: "نقطهٔ Host (zapret)",
+    help: "یک نقطهٔ اضافی بعد از نام هاست در هدر HTTP Host." },
+  { k: "max_payload_size", s: "desync", t: "int", lbl: "سقف اندازهٔ payload (بایت)",
+    min: 0, max: 65535, help: "پکت‌های بزرگ‌تر از این جهش نمی‌شوند. ۰ = نامحدود." },
+  { k: "fake_resend_count", s: "desync", t: "int", lbl: "تعداد ارسال مجدد پکت جعلی",
+    min: 1, max: 10, help: "پکت جعلی چند بار ارسال مجدد شود." },
+  { k: "ipset_hostlist", s: "desync", t: "strlist", lbl: "فهرست هاست (سبک zapret)",
+    placeholder: "example.com,*.example.org",
+    help: "فقط این هاست‌ها جهش می‌شوند. خالی = همه." },
+  // ---- tools: Integration tools ----
+  { k: "enable_self_update", s: "tools", t: "bool", lbl: "بررسی به‌روزرسانی در شروع", restart: true,
+    help: "در شروع یک بار از API ریلیز GitHub می‌پرسد و در لاگ می‌نویسد نسخهٔ جدیدتری هست یا نه. هرگز فایل را دانلود یا جایگزین نمی‌کند. این بررسی فقط در شروع اجرا می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "update_repo", s: "tools", t: "str", lbl: "مخزن به‌روزرسانی (owner/repo)", restart: true, mono: true,
+    placeholder: "owner/repo",
+    help: "مخزن GitHub برای بررسی به‌روزرسانی. باید owner/repo باشد، نه آدرس. فقط در شروع خوانده می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "enable_client_detect", s: "tools", t: "bool", lbl: "شناسایی کلاینت‌های پروکسی", restart: true,
+    help: "در شروع، در لاگ می‌نویسد کدام کلاینت‌های پروکسی شناخته‌شده (v2rayN، Xray، sing-box، ...) در حال اجرا هستند تا از پورت‌هایشان پرهیز شود. فقط در شروع اجرا می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "enable_youtube_warmup", s: "tools", t: "bool", lbl: "گرم‌کردن یوتیوب", restart: true,
+    help: "در شروع، کش DNS را برای آدرس‌های یوتیوب گرم می‌کند. فقط در شروع اجرا می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "enable_mobile_gateway", s: "tools", t: "bool", lbl: "گیت‌وی موبایل (اشتراک LAN)", restart: true,
+    danger: true,
+    help: "فقط گزارش می‌دهد (آدرس LAN و جدول ARP) و هیچ شنونده‌ای روی LAN باز نمی‌کند — رله همچنان فقط 127.0.0.1 است. فقط در شروع اجرا می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+  { k: "enable_proxy_cleanup", s: "tools", t: "bool", lbl: "بازگرداندن پروکسی ویندوز هنگام خروج", restart: true,
+    help: "هنگام خروج، تنظیمات پروکسی سیستم را بازنشانی می‌کند. وضعیت اولیه فقط در شروع ذخیره می‌شود؛ برای اعمال‌شدن نیاز به اجرای مجدد برنامه دارد." },
+];
+
+const byKey = {};
+FIELDS.forEach((f) => { byKey[f.k] = f; });
+
+
+/* The profile list is derived from the schema instead of being written
+ * out twice — one source of truth, so the two can never drift. */
+const PROFILES = byKey.mutation_profile.opts;
+
+/* Quick-access presets. Data, not four copy-pasted click handlers: adding
+ * a preset means adding a row here, not duplicating a function. */
+const PRESETS = {
+  qa_all_on: {
+    label: "همه روشن",
+    profile: null,
+    set: {
+      enable_anti_fingerprint: true,
+      randomize_ip_id: true,
+      randomize_packet_size: true,
+      enable_reverse_frag: true,
+      enable_wrong_seq: true,
+      enable_wrong_checksum: true,
+      enable_oob_injection: true,
+      enable_hostdot: true,
+      enable_fake_with_sni: true,
+    },
+    done: "همهٔ تکنیک‌ها روشن شد — برای اعمال، ذخیره را بزنید",
+  },
+  qa_all_off: {
+    label: "حالت ساده",
+    profile: null,
+    set: {
+      enable_anti_fingerprint: false,
+      randomize_ip_id: false,
+      randomize_packet_size: false,
+      enable_reverse_frag: false,
+      enable_wrong_seq: false,
+      enable_wrong_checksum: false,
+      enable_oob_injection: false,
+      enable_hostdot: false,
+      enable_fake_with_sni: false,
+    },
+    done: "حالت ساده اعمال شد — برای اعمال، ذخیره را بزنید",
+  },
+  qa_stealth: {
+    label: "Stealth",
+    profile: "Stealth",
+    set: {
+      enable_decoys: true,
+      enable_sni_fragmentation: true,
+      enable_anti_fingerprint: false,
+      enable_reverse_frag: false,
+      enable_wrong_seq: false,
+      enable_wrong_checksum: false,
+      enable_oob_injection: false,
+      enable_hostdot: false,
+    },
+    done: "پروفایل Stealth اعمال شد — برای اعمال، ذخیره را بزنید",
+  },
+  qa_aggressive: {
+    label: "Aggressive",
+    profile: "Aggressive",
+    set: {
+      enable_decoys: true,
+      enable_sni_fragmentation: true,
+      enable_anti_fingerprint: true,
+      randomize_ip_id: true,
+      enable_reverse_frag: true,
+      enable_wrong_seq: true,
+      enable_wrong_checksum: true,
+      enable_fake_with_sni: true,
+    },
+    done: "پروفایل Aggressive اعمال شد — همهٔ تکنیک‌ها روشن",
+  },
+};
+
+/* Chips on the overview: the technique flags worth watching at a glance. */
+const TECH_DEFS = [
+  { field: "enable_decoys", label: "پکت جعلی" },
+  { field: "enable_sni_fragmentation", label: "تکه‌کردن SNI" },
+  { field: "enable_quic_port_bypass", label: "دورزدن QUIC" },
+  { field: "enable_utls_fingerprint", label: "uTLS" },
+  { field: "enable_ech_grease", label: "ECH GREASE" },
+  { field: "enable_sni_disguise", label: "استتار SNI" },
+  { field: "enable_swap_foolers", label: "فولر جابه‌جا" },
+  { field: "enable_kill_switch", label: "کلید قطع" },
+  { field: "relay_require_inject", label: "fail-closed" },
+  { field: "enable_anti_fingerprint", label: "ضد اثر انگشت" },
+  { field: "enable_reverse_frag", label: "تکه‌سازی معکوس" },
+  { field: "enable_wrong_seq", label: "wrong-seq" },
+  { field: "enable_wrong_checksum", label: "wrong-chksum" },
+  { field: "enable_oob_injection", label: "تزریق OOB" },
+  { field: "enable_hostdot", label: "نقطهٔ Host" },
+  { field: "randomize_ip_id", label: "IP-ID تصادفی" },
+  { field: "enable_sni_scanner", label: "اسکنر SNI" },
+  { field: "enable_self_update", label: "بررسی به‌روزرسانی" },
+];
+
+const LS_TOKEN = "dpi_guard_token";
+
+/* ---------------------------- state ---------------------------- */
+
+const state = {
+  baseline: {},        // key -> UI string, as loaded from the server
+  current: {},         // key -> UI string, live in the form
+  errors: {},          // key -> blocking error message
+  touched: new Set(),  // keys the operator has edited in this session
+  loaded: false,       // first /api/config has not landed yet
+  onlyDirty: false,
+  live: true,
+  tab: "overview",
+  cardsBuilt: false,
+  chipsBuilt: false,
+};
+
+/* ---------------------------- utilities ---------------------------- */
+
+const $ = (id) => document.getElementById(id);
+
+function esc(s) {
+  return String(s).replace(/[&<>"'`]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c]));
+}
+/** TOML basic-string literal. */
+function tstr(v) {
+  return '"' + String(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"';
+}
+function msg(text, kind) {
+  const el = $("msg");
+  el.textContent = text || "";
+  el.className = kind || "";
+}
+function listVal(s) {
+  return String(s || "").split(",").map((x) => x.trim()).filter(Boolean);
+}
+
+const isIP = (s) => {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(s)) return s.split(".").every((p) => +p <= 255);
+  return /^[0-9a-fA-F:]+$/.test(s) && s.includes(":");
+};
+const isHost = (s) => /^[A-Za-z0-9.-]+$/.test(s);
+const isSniChars = (s) => /^[A-Za-z0-9._-]+$/.test(s);
+const isPatChars = (s) => /^[A-Za-z0-9._*-]+$/.test(s);
+const isHex64 = (s) => /^[0-9a-fA-F]{64}$/.test(s);
+
+/** Returns an error string, or "" when the raw UI value is acceptable. */
+function validateField(f, raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (f.t === "bool") return "";
+  if (f.t === "int") {
+    if (s === "") return "A number is required";
+    const n = Number(s);
+    if (!Number.isInteger(n)) return "Must be a whole number";
+    if (f.min != null && n < f.min) return "Min " + f.min;
+    if (f.max != null && n > f.max) return "Max " + f.max;
+    if (f.k === "fragment_chunk_size" && n !== 0 && n < 8) return "Either 0, or 8-16384";
+    return "";
+  }
+  if (f.t === "enum") return f.opts.includes(s) ? "" : "Must be one of the allowed values";
+  if (f.t === "intlist") {
+    const items = listVal(s);
+    if (f.max && items.length > f.max) return "Max " + f.max + " entries";
+    for (const it of items) {
+      const n = Number(it);
+      if (!Number.isInteger(n) || n < 1 || n > 65535) return "Invalid port: " + it;
+    }
+    return "";
+  }
+  if (f.t === "strlist") {
+    const items = listVal(s);
+    if (f.k === "win_divert_sha256" && items.length !== 0 && items.length !== 2)
+      return "Enter exactly two pins: WinDivert.dll, then WinDivert64.sys";
+    for (const it of items) {
+      if (f.k === "win_divert_sha256" && !isHex64(it)) return "Each pin must be exactly 64 hex characters";
+      if (f.k === "rotate_ips" && !isIP(it)) return "Invalid IP: " + it;
+      if ((f.k === "sni_only" || f.k === "sni_except") && (!isPatChars(it) || it.length > 253))
+        return "Invalid pattern: " + it;
+    }
+    return "";
+  }
+  // string-ish
+  if (s === "") {
+    if (f.k === "relay_connect_host" || f.k === "relay_fake_sni") return "";
+    if (f.k === "kill_switch_adapter") return "";
+    if (f.k === "web_ui_token" || f.k === "win_divert_sha256") return "";
+    return "";
+  }
+  switch (f.k) {
+    case "relay_connect_host":
+      if (s.toLowerCase() === "auto") return "";
+      if (!isIP(s) && !isHost(s)) return "Must be a valid IP or hostname (or 'auto')";
+      if (/^(127\.|::1$|169\.254\.169\.254$|localhost)/i.test(s)) return "loopback/metadata is not allowed";
+      return "";
+    case "relay_fake_sni":
+    case "fronting_benign_sni":
+      if (s.toLowerCase() === "auto") return "";
+      if (s.length > 253) return "253 characters max";
+      return isSniChars(s) ? "" : "Letters/digits/dot/hyphen/underscore only (or 'auto')";
+    case "doh_server": {
+      // Mirrors netguard::validate_doh_url: https only, no userinfo, and
+      // never a loopback/link-local/metadata host.
+      if (!s.startsWith("https://")) return "Must start with https://";
+      const rest = s.slice("https://".length);
+      const cut = rest.search(/[/?#]/);
+      const authority = cut < 0 ? rest : rest.slice(0, cut);
+      if (!authority || /\s/.test(authority)) return "Invalid host";
+      if (authority.includes("@")) return "userinfo (user:pass@) is not allowed";
+      let host = authority;
+      if (host.startsWith("[")) {
+        const close = host.indexOf("]");
+        if (close < 0) return "Incomplete IPv6 address";
+        host = host.slice(1, close);
+      } else {
+        host = host.split(":")[0];
+      }
+      if (!host) return "Host is empty";
+      const hl = host.toLowerCase().replace(/\.+$/, "");
+      const bad = /^127\./.test(hl) || hl === "::1" || /^169\.254\./.test(hl) ||
+        hl === "0.0.0.0" || /^2[2-3]\d\./.test(hl) ||
+        hl === "localhost" || hl.endsWith(".localhost") || hl === "local" ||
+        hl.endsWith(".local") || hl === "internal" || hl.endsWith(".internal");
+      if (bad) return "loopback/link-local/metadata is not allowed";
+      return "";
+    }
+    case "trusted_dns":
+      return s.trim() === "" ? "" : "Unsupported: signed WFP redirect callout is not shipped";
+    case "kill_switch_adapter":
+      return /^[A-Za-z0-9 _-]+$/.test(s) ? "" : "Letters/digits/space/hyphen/underscore only";
+    case "web_ui_token":
+      if (s.length < 16) return "16 characters minimum";
+      // eslint-disable-next-line no-control-regex
+      if (!/^[\x21-\x7e]+$/.test(s) || s.includes('"') || s.includes("\\"))
+        return 'Printable ASCII, no " or \\';
+      return "";
+    default:
+      return "";
+  }
+}
+
+/**
+ * Cross-field rules. `errs` are things Settings::validate() would reject
+ * (they block Save); `warns` are legal-but-risky states that must never
+ * silently disable the Save button.
+ */
+function crossCheck(values) {
+  const errs = {};
+  const warns = {};
+  const relayOn = values.relay_enabled === "true";
+  if (relayOn) {
+    if (!String(values.relay_connect_host || "").trim())
+      errs.relay_connect_host = "Required when the relay is on";
+    if (!String(values.relay_fake_sni || "").trim())
+      errs.relay_fake_sni = "Required when the relay is on";
+  }
+  if (values.enable_kill_switch === "true" && !String(values.kill_switch_adapter || "").trim())
+    errs.kill_switch_adapter = "Required when the kill switch is on";
+  if (values.enable_web_ui === "true" && relayOn &&
+      values.relay_listen_port === values.web_ui_port)
+    errs.relay_listen_port = "Conflicts with the dashboard port";
+  if (relayOn && ["10808", "10809", "10853"].indexOf(String(values.relay_listen_port)) >= 0)
+    warns.relay_listen_port = "This port belongs to v2rayN itself; one of the two programs may fail to bind. Pick a different port unless you've intentionally closed v2rayN";
+  if (relayOn && values.relay_require_inject === "false")
+    warns.relay_require_inject = "Warning: fail-closed is off — if injection fails, the real SNI will leak";
+  if (values.intercept_all_tcp === "true" && values.intercept_all_udp === "true")
+    warns.intercept_all_tcp = "Warning: all TCP+UDP traffic except 22/53/3389 will be intercepted";
+  if (values.enable_swap_foolers === "true")
+    warns.enable_swap_foolers = "Warning: fake packet with a swapped endpoint; IDS/EDR may flag it";
+  if (values.enable_md5sig_fooling === "true")
+    warns.enable_md5sig_fooling = "Warning: breaks the connection on some servers";
+  return { errs, warns };
+}
+
+
+/* --------------------- control + row rendering --------------------- */
+
+function controlHtml(f) {
+  const id = "f_" + f.k;
+  const al = ' aria-label="' + esc(f.lbl + " (" + f.k + ")") + '"' +
+    ' aria-describedby="e_' + esc(f.k) + '"';
+  if (f.t === "bool") {
+    return '<label class="switch">' +
+      '<input type="checkbox" id="' + id + '" data-k="' + f.k + '"' + al + '>' +
+      '<span class="switch-state" id="' + id + '_lbl">خاموش</span></label>';
+  }
+  if (f.t === "enum") {
+    return '<select id="' + id + '" data-k="' + f.k + '"' + al + '>' +
+      f.opts.map((o) => '<option value="' + esc(o) + '">' + esc(o) + "</option>").join("") +
+      "</select>";
+  }
+  const type = f.t === "int" ? "number" : "text";
+  const attrs = (f.min != null ? ' min="' + f.min + '"' : "") +
+                (f.max != null && f.t === "int" ? ' max="' + f.max + '"' : "");
+  return '<input type="' + type + '" id="' + id + '" data-k="' + f.k + '"' + attrs + al +
+    (f.mono ? ' class="mono"' : "") +
+    (f.placeholder ? ' placeholder="' + esc(f.placeholder) + '"' : "") +
+    ' autocomplete="off" spellcheck="false">';
+}
+
+function tagsHtml(f) {
+  return (f.danger ? '<span class="tag danger">پرخطر</span>' : "") +
+    (f.secret ? '<span class="tag locked">فقط نوشتن</span>' : "") +
+    (f.restart ? '<span class="tag locked" title="این تنظیم فقط بعد از اجرای مجدد برنامه اعمال می‌شود">نیاز به ری‌استارت</span>' : "");
+}
+
+function rowHtml(f) {
+  return '<div class="row-body">' +
+      '<div class="lab">' + esc(f.lbl) + " " + tagsHtml(f) +
+      ' <code>' + esc(f.k) + "</code></div>" +
+      '<div class="help">' + esc(f.help || "") + "</div>" +
+      '<div class="err" id="e_' + f.k + '"></div>' +
+    "</div>" +
+    '<div class="row-ctl">' + controlHtml(f) + "</div>";
+}
+
+/* Build the tab bar once. */
+function renderTabBar() {
+  const bar = $("tabbar");
+  bar.innerHTML = TABS.map((t) =>
+    '<button class="tabbtn" type="button" role="tab" data-tab="' + t.id + '"' +
+    ' id="tab-' + t.id + '-btn" aria-controls="tab-' + t.id + '"' +
+    ' aria-selected="' + (t.id === state.tab) + '">' + esc(t.title) + "</button>").join("");
+  bar.querySelectorAll(".tabbtn").forEach((b) => {
+    b.addEventListener("click", () => setTab(b.dataset.tab));
+  });
+}
+
+function setTab(id) {
+  // URL reflects state: reload keeps you on the same tab.
+  if (window.history && window.history.replaceState) {
+    window.history.replaceState(null, "", "#tab-" + id);
+  }
+  state.tab = id;
+  document.querySelectorAll(".tabbtn").forEach((b) => {
+    const on = b.dataset.tab === id;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+  document.querySelectorAll(".tabpage").forEach((p) => p.classList.toggle("active", p.id === "tab-" + id));
+  const settingsTab = id !== "overview" && id !== "toml";
+  $("settings-toolbar").classList.toggle("hide", !settingsTab);
+}
+
+/* Render every settings section, once, into its owning tab's container.
+ * Sections are always expanded (no accordion) — the tab strip is the only
+ * thing that changes what's visible, so nothing here ever resizes on its
+ * own between polls. */
+function renderFields() {
+  const hosts = {};
+  for (const t of TABS) {
+    const el = $("fields-" + t.id);
+    if (el) hosts[t.id] = el;
+  }
+  for (const sec of SECTIONS) {
+    const fs = FIELDS.filter((f) => f.s === sec.id);
+    if (!fs.length) continue;
+    const host = hosts[TAB_OF_SECTION[sec.id]];
+    if (!host) continue;
+    const el = document.createElement("section");
+    el.className = "panel";
+    el.dataset.sec = sec.id;
+    const intro = sec.id === "dns"
+      ? '<div class="panel-note">' +
+        "<strong>این تنظیمات DNS مربوط به v2rayN نیست</strong><br>" +
+        "تب‌های Basic / Advanced / V2ray Custom / sing-box Custom در خود کلاینت می‌مانند. " +
+        "در اینجا چیزی به نام Domestic DNS، Proxy Target Strategy، Parallel Query یا " +
+        "Happy Eyeballs وجود ندارد، چون این برنامه یک مسیریاب DNS نیست. " +
+        "WinDivert پورت ۵۳ را رهگیری نمی‌کند؛ روی Windows، نگهبان اجباری WFP بیرون‌رفتِ " +
+        "DNS متن‌باز را به‌جز loopback مسدود می‌کند. کش DoH تا ۶ ساعت (MAX_STALE) پاسخ‌های " +
+        "کهنه را سرو می‌کند و کلید جداگانه‌ای ندارد. فقط رکورد A (IPv4) پرسیده می‌شود." +
+        "</div>"
+      : "";
+    el.innerHTML =
+      "<h2>" + esc(sec.title) + '<span class="cnt">' + fs.length + " تنظیم</span></h2>" +
+      intro + '<div class="rows">' +
+      fs.map((f) => '<div class="row" data-k="' + f.k + '">' + rowHtml(f) + "</div>").join("") +
+      "</div>";
+    host.appendChild(el);
+  }
+  document.querySelectorAll("input,select").forEach((inp) => {
+    const k = inp.dataset.k;
+    if (!k) return;
+    const ev = inp.type === "checkbox" ? "change" : "input";
+    inp.addEventListener(ev, () => {
+      const f = byKey[k];
+      const val = inp.type === "checkbox" ? (inp.checked ? "true" : "false") : inp.value;
+      if (f.danger && !confirmDanger(k, val, inp)) return;
+      state.current[k] = val;
+      state.touched.add(k);
+      refresh();
+    });
+  });
+}
+
+/**
+ * Every risky change gets its own explicit sentence. One table, one
+ * prompt helper — no per-key `if` chain duplicated across handlers.
+ */
+const DANGER_CONFIRMS = {
+  relay_require_inject: "خاموش‌کردن fail-closed؟ در این حالت اگر تزریق شکست بخورد، SNI واقعی شما روی سیم می‌رود. ادامه می‌دهید؟",
+  intercept_all_tcp: "همهٔ پورت‌های TCP (به‌جز 22/53/3389) رهگیری خواهند شد. ادامه می‌دهید؟",
+  intercept_all_udp: "همهٔ پورت‌های UDP (به‌جز 22/53/3389) رهگیری خواهند شد. ادامه می‌دهید؟",
+  enable_swap_foolers: "یک پکت جعلی RST/SYN-ACK با مقصد جابه‌جا ساخته می‌شود؛ IDS/EDR ممکن است علامتش بزند. ادامه می‌دهید؟",
+  enable_reverse_frag: "سگمنت‌های TCP با ترتیب معکوس فرستاده می‌شوند. ممکن است بعضی سرورها را بشکند. ادامه می‌دهید؟",
+  enable_oob_injection: "دادهٔ out-of-band تزریق می‌شود. ممکن است بعضی سرورها را بشکند. ادامه می‌دهید؟",
+  enable_md5sig_fooling: "فولر MD5SIG روی بعضی سرورها اتصال را می‌شکند. ادامه می‌دهید؟",
+};
+
+function confirmDanger(k, val, inp) {
+  const turningOn = val === "true";
+  // fail-closed is the only risk that fires when it is turned OFF.
+  if (k === "relay_require_inject" && turningOn) return true;
+  if (k !== "relay_require_inject" && !turningOn) return true;
+  if (!window.confirm(DANGER_CONFIRMS[k])) {
+    const revert = turningOn ? false : true;   // checkbox: undo the click
+    inp.checked = k === "relay_require_inject" ? true : false;
+    state.current[k] = inp.checked ? "true" : "false";
+    return false;
+  }
+  return true;
+}
+
+function setControl(f, val) {
+  const el = $("f_" + f.k);
+  if (!el) return;
+  if (f.t === "bool") el.checked = val === "true";
+  else el.value = val == null ? "" : val;
+}
+
+/**
+ * Recompute per-field + cross-field state for every row and repaint it.
+ * Errors (server would reject) block Save; warnings never do.
+ */
+function refreshRows() {
+  const { errs, warns } = crossCheck(state.current);
+  for (const f of FIELDS) {
+    const val = state.current[f.k];
+    let err = validateField(f, val);
+    if (!err && errs[f.k]) err = errs[f.k];
+    const warn = err ? "" : (warns[f.k] || "");
+    state.errors[f.k] = err;
+    const eEl = $("e_" + f.k);
+    if (eEl) eEl.textContent = err || warn;
+    const ctl = $("f_" + f.k);
+    if (ctl) ctl.setAttribute("aria-invalid", err ? "true" : "false");
+    const row = document.querySelector('.row[data-k="' + f.k + '"]');
+    if (row) {
+      row.classList.toggle("bad", !!err);
+      row.classList.toggle("warn", !err && !!warn);
+      row.classList.toggle("dirty", !err && val !== state.baseline[f.k]);
+    }
+    if (f.t === "bool") {
+      const lbl = $("f_" + f.k + "_lbl");
+      if (lbl) lbl.textContent = val === "true" ? "روشن" : "خاموش";
+    }
+  }
+  applyFilter();
+}
+
+/** Compose the derived views instead of monkey-patching one of them. */
+function refresh() {
+  refreshRows();
+  updateDirtyPill();
+  updateFeatureCount();
+}
+
+/** Keys whose form value differs from what the server last reported. */
+function dirtyKeys() {
+  return FIELDS.filter((f) => state.current[f.k] !== state.baseline[f.k]).map((f) => f.k);
+}
+
+function blockingErrors() {
+  return FIELDS.filter((f) => !!state.errors[f.k]);
+}
+
+function updateDirtyPill() {
+  const n = dirtyKeys().length;
+  const bad = blockingErrors().length;
+  $("dirtypill").textContent = n + " تغییر" + (bad ? " · " + bad + " خطا" : "");
+  $("btn_save").disabled = n === 0 || bad > 0;
+  $("btn_revert").disabled = n === 0;
+  $("btn_validate").disabled = n === 0 || bad > 0;
+}
+
+function updateFeatureCount() {
+  const on = TECH_DEFS.filter((t) => state.current[t.field] === "true").length;
+  $("feature_count").textContent = on + " از " + TECH_DEFS.length + " قابلیت فعال";
+}
+
+function applyFilter() {
+  const q = ($("q") ? $("q").value : "").trim().toLowerCase();
+  let shown = 0;
+  for (const sec of SECTIONS) {
+    const blk = document.querySelector('section[data-sec="' + sec.id + '"]');
+    if (!blk) continue;
+    let secShown = 0;
+    for (const f of FIELDS.filter((x) => x.s === sec.id)) {
+      const row = blk.querySelector('.row[data-k="' + f.k + '"]');
+      if (!row) continue;
+      const dirty = state.current[f.k] !== state.baseline[f.k];
+      const hay = (f.k + " " + f.lbl + " " + (f.help || "")).toLowerCase();
+      let ok = true;
+      if (q && !hay.includes(q)) ok = false;
+      if (state.onlyDirty && !dirty) ok = false;
+      row.classList.toggle("hide", !ok);
+      if (ok) { secShown++; shown++; }
+    }
+    blk.classList.toggle("hide", secShown === 0);
+  }
+  $("filter_meta").textContent = q || state.onlyDirty
+    ? shown + " تنظیم نمایش داده می‌شود"
+    : "";
+}
+
+/* --------------------------- TOML generation --------------------------- */
+
+/** Partial TOML containing only the keys that differ from the baseline. */
+function buildPartialToml(keys) {
+  const out = [];
+  for (const k of keys) {
+    const f = byKey[k];
+    if (!f) continue;
+    const raw = String(state.current[k] == null ? "" : state.current[k]).trim();
+    if (f.secret && raw === "") continue;          // redacted => "leave as-is"
+    if (f.t === "bool") { out.push(k + " = " + (raw === "true")); continue; }
+    if (f.t === "int") { out.push(k + " = " + Number(raw)); continue; }
+    if (f.t === "enum") { out.push(k + " = " + tstr(raw)); continue; }
+    if (f.t === "intlist") {
+      out.push(k + " = [" + listVal(raw).map((x) => Number(x)).join(", ") + "]");
+      continue;
+    }
+    if (f.t === "strlist") {
+      out.push(k + " = [" + listVal(raw).map(tstr).join(", ") + "]");
+      continue;
+    }
+    out.push(k + " = " + tstr(raw));
+  }
+  return out.join("\n") + (out.length ? "\n" : "");
+}
+
+/* ------------------------------- API ------------------------------- */
+
+function getToken() { return localStorage.getItem(LS_TOKEN) || ""; }
+function setToken(t) {
+  if (t) localStorage.setItem(LS_TOKEN, t); else localStorage.removeItem(LS_TOKEN);
+}
+
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({ Authorization: "Bearer " + getToken() }, opts.headers || {});
+  const res = await fetch(path, Object.assign({}, opts, { headers }));
+  if (res.status === 401) {
+    setToken("");
+    $("ovl").classList.remove("hide");
+    throw new Error("401 — توکن نامعتبر");
+  }
+  const ct = res.headers.get("content-type") || "";
+  const text = await res.text();
+  if (ct.includes("json")) { try { return JSON.parse(text); } catch (e) { /* fall through */ } }
+  return text;
+}
+
+async function loadConfig(quiet) {
+  const c = await api("/api/config");
+  if (!c || typeof c !== "object") throw new Error("Invalid /api/config response");
+  for (const f of FIELDS) {
+    // Secret fields are redacted by the server: never overwrite what the
+    // operator has already typed in this session.
+    if (f.secret && state.current[f.k] != null && state.current[f.k] !== "") continue;
+    const v = uiFromConfig(c, f);
+    state.baseline[f.k] = v;
+    // Before the first load, or for a field the operator has not touched,
+    // the server is the source of truth. A field they *are* editing keeps
+    // its in-progress value so a background refresh cannot eat it.
+    if (!state.loaded || !state.touched.has(f.k)) state.current[f.k] = v;
+    setControl(f, state.current[f.k]);
+  }
+  state.loaded = true;
+  refresh();
+  $("qr_lport").textContent = state.current.relay_listen_port || "40443";
+  if (!quiet) msg("");
+  return c;
+}
+
+function uiFromConfig(c, f) {
+  if (f.t === "bool") return c[f.k] ? "true" : "false";
+  if (f.t === "intlist") return (c[f.k] || []).join(",");
+  if (f.t === "strlist") return (c[f.k] || []).join(",");
+  const v = c[f.k];
+  return v == null ? "" : String(v);
+}
+
+async function postConfig(tomlText) {
+  const r = await api("/api/config", {
+    method: "POST",
+    headers: { "Content-Type": "text/plain" },
+    body: tomlText
+  });
+  if (r && r.error) { msg("خطای سرور: " + r.error, "bad"); return false; }
+  msg((r && r.message) || "ذخیره شد — بارگذاری مجدد داغ تا حدود ۱ ثانیه اعمال می‌شود", "ok");
+  return true;
+}
+
+/** True when any of `keys` is flagged restart-required in the schema. */
+function needsRestart(keys) {
+  return keys.some((k) => byKey[k] && byKey[k].restart);
+}
+
+/* ------------------------------ status ------------------------------ */
+
+/* Persian uptime, ASCII digits: "45 ثانیه", "12 دقیقه", "1 ساعت و 2 دقیقه".
+ * The digits stay ASCII on purpose — the card values are also read by
+ * uitest/test-status.mjs, and Persian-Indic digits would silently change
+ * every number a log-scraping operator greps for. */
+function fmtUptime(sec) {
+  sec = Number(sec) || 0;
+  if (sec < 60) return sec + " ثانیه";
+  if (sec < 3600) return Math.floor(sec / 60) + " دقیقه";
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return h + " ساعت" + (m ? " و " + m + " دقیقه" : "");
+}
+
+/* Fixed card list — built once, then only the value text is updated on
+ * each poll. This is the fix for the layout "jumping": the old code
+ * replaced the entire #cards innerHTML every 4 seconds, and because the
+ * grid's row count/wrapping depends on the text length of live numbers,
+ * that periodically reflowed the whole page underneath it. Same DOM
+ * nodes every tick = no reflow. */
+const CARD_DEFS = [
+  { id: "profile", label: "پروفایل", small: true, get: (s) => esc(s.mutation_profile || "—") },
+  { id: "isp", label: "اپراتور", small: true, get: (s) => esc(s.isp_profile || "auto") },
+  { id: "processed", label: "پکت رهگیری‌شده", get: (s) => esc(s.processed_packets) },
+  { id: "mutated", label: "پکت جهش‌یافته", get: (s) => esc(s.mutated_packets != null ? s.mutated_packets : 0) },
+  { id: "uptime", label: "مدت کارکرد", small: true, get: (s) => esc(fmtUptime(s.uptime_secs)) },
+  { id: "doh", label: "DoH رله", small: true, get: (s) => esc(s.doh_state || "—") },
+  { id: "handles", label: "هندل درایور", small: true, get: (s) =>
+    esc((s.driver_handles_live ? 1 : 0) + " فعال + " + (s.driver_handles_retired != null ? s.driver_handles_retired : 0) + " بازنشسته") },
+  { id: "ports", label: "پورت‌های رهگیری‌شده", small: true, get: (s) => esc((s.intercept_ports || []).join(",") || "همه") },
+  { id: "ttl", label: "TTL پکت جعلی", get: (s) => esc(s.decoy_ttl) },
+  { id: "chunk", label: "اندازهٔ تکه", get: (s) => esc(s.fragment_chunk_size) },
+  { id: "timeout", label: "تایم‌اوت (ثانیه)", get: (s) => esc(s.idle_timeout_secs) },
+  { id: "fronting", label: "fronting", small: true, get: (s) => esc(s.fronting_benign_sni || "—") },
+  { id: "rotation", label: "چرخش SNI", small: true, get: (s) => esc(s.sni_rotation_mode || "—") },
+  { id: "payloadcap", label: "سقف payload", get: (s) => esc(s.max_payload_size || 0) + " B" },
+  { id: "resend", label: "ارسال مجدد جعلی", get: (s) => esc(s.fake_resend_count || 1) + "x" },
+  { id: "autottla2", label: "AutoTTL a2", get: (s) => esc(s.autottl_scale_a2 || 0) },
+];
+
+function buildCardsOnce() {
+  $("cards").innerHTML = CARD_DEFS.map((c) =>
+    '<div class="card"><div class="k">' + esc(c.label) + '</div><div class="v' +
+    (c.small ? " sm" : "") + '" id="cardv_' + c.id + '"></div></div>').join("");
+  state.cardsBuilt = true;
+}
+
+function renderChips(s) {
+  if (!state.chipsBuilt) {
+    $("tech").innerHTML = TECH_DEFS.map((t) =>
+      '<span class="chip" data-tech="' + esc(t.field) + '">' +
+      '<span class="dot" aria-hidden="true"></span>' + esc(t.label) + "</span>").join("");
+    state.chipsBuilt = true;
+  }
+  $("tech").querySelectorAll(".chip").forEach((chip) => {
+    chip.classList.toggle("on", !!s[chip.dataset.tech]);
+  });
+}
+
+async function refreshStatus() {
+  const s = await api("/api/status");
+  if (!s || typeof s !== "object") throw new Error("Invalid /api/status response");
+  $("conn").textContent = "متصل شد";
+  $("conn").className = "pill on";
+  $("relaypill").textContent = "رله: " + (s.relay_enabled ? "روشن" : "خاموش") +
+    " · " + (s.relay_listen_port || "-");
+  $("relaypill").className = "pill " + (s.relay_enabled ? "on" : "off");
+
+  if (!state.cardsBuilt) buildCardsOnce();
+  for (const c of CARD_DEFS) {
+    const el = $("cardv_" + c.id);
+    if (el) el.innerHTML = c.get(s);
+  }
+  renderChips(s);
+
+  $("profiles").innerHTML = PROFILES.map((p) =>
+    '<button type="button" class="btn btn-sm' + (p === s.mutation_profile ? " btn-on" : "") +
+    '" data-p="' + esc(p) + '">' + esc(p) + "</button>").join("");
+  $("s_cnt").textContent = " · " + (s.strategy_scores || []).length + " رکورد";
+  $("scores").innerHTML = (s.strategy_scores || []).map((x) =>
+    "<tr><td>" + esc(x.key) + '</td><td class="num">' + esc(x.score) + "</td></tr>").join("") ||
+    '<tr><td colspan="2" class="help">هنوز داده‌ای ثبت نشده</td></tr>';
+  $("domains").textContent = (s.recent_domains || []).join("، ") || "هنوز موردی ثبت نشده";
+}
+
+async function tick() {
+  if (!state.live) return;
+  try { await refreshStatus(); }
+  catch (e) {
+    $("conn").textContent = "قطع شد";
+    $("conn").className = "pill off";
+    msg("خطا: " + e.message, "bad");
+  }
+}
+
+/* ------------------------------ wiring ------------------------------ */
+
+renderTabBar();
+{
+  const fromUrl = String(window.location.hash || "").replace("#tab-", "");
+  if (TABS.some((t) => t.id === fromUrl)) state.tab = fromUrl;
+}
+setTab(state.tab);
+
+$("q").addEventListener("input", applyFilter);
+$("btn_changed").addEventListener("click", () => {
+  state.onlyDirty = !state.onlyDirty;
+  $("btn_changed").classList.toggle("btn-on", state.onlyDirty);
+  applyFilter();
+});
+
+$("btn_live").addEventListener("click", () => {
+  state.live = !state.live;
+  $("btn_live").classList.toggle("btn-on", state.live);
+  $("btn_live").textContent = "به‌روزرسانی زنده: " + (state.live ? "روشن" : "خاموش");
+});
+
+/* One preset applier instead of four near-identical handlers. */
+function applyPreset(id) {
+  const p = PRESETS[id];
+  if (!p) return;
+  if (p.profile) {
+    const f = byKey.mutation_profile;
+    if (f) { state.current.mutation_profile = p.profile; setControl(f, p.profile); }
+  }
+  for (const k of Object.keys(p.set)) {
+    const f = byKey[k];
+    if (!f || f.t !== "bool") continue;
+    state.current[k] = String(p.set[k]);
+    setControl(f, state.current[k]);
+  }
+  refresh();
+  msg(p.done, "ok");
+}
+/* The buttons are rendered from PRESETS too — adding a preset adds its
+ * button, its label and its handler in one edit. */
+function renderPresets() {
+  $("presets").innerHTML = Object.keys(PRESETS).map((id) =>
+    '<button type="button" class="btn btn-sm" id="' + id + '">' +
+    esc(PRESETS[id].label) + "</button>").join("");
+  for (const id of Object.keys(PRESETS)) {
+    $(id).addEventListener("click", () => applyPreset(id));
+  }
+}
+renderPresets();
+
+async function doSave() {
+  const keys = dirtyKeys();
+  if (!keys.length) { msg("هیچ تغییری انجام نشده", "warn"); return; }
+  const bad = keys.filter((k) => state.errors[k]);
+  if (bad.length) {
+    msg("اول این خطاها را رفع کنید: " + bad.join("، "), "bad");
+    const first = $("f_" + bad[0]);   // send the operator straight to it
+    if (first) first.focus();
+    return;
+  }
+  const toml = buildPartialToml(keys);
+  try {
+    const ok = await postConfig(toml);
+    if (ok) {
+      if (needsRestart(keys))
+        msg("ذخیره شد؛ ولی تنظیم‌های «نیاز به ری‌استارت» فقط بعد از اجرای مجدد برنامه اعمال می‌شوند", "warn");
+      for (const k of keys) { state.baseline[k] = state.current[k]; state.touched.delete(k); }
+      refresh();
+      setTimeout(() => { loadConfig(true).catch(() => {}); }, 1400);
+    }
+  } catch (e) { msg("خطا: " + e.message, "bad"); }
+}
+$("btn_save").addEventListener("click", doSave);
+
+async function doValidate() {
+  const toml = buildPartialToml(dirtyKeys());
+  if (!toml.trim()) { msg("تغییری برای اعتبارسنجی نیست", "warn"); return; }
+  try {
+    const r = await api("/api/validate", {
+      method: "POST", headers: { "Content-Type": "text/plain" }, body: toml
+    });
+    if (r && r.ok) msg("اعتبارسنجی سمت سرور موفق بود (" + dirtyKeys().length + " فیلد) — ذخیره نشد", "ok");
+    else msg("سرور رد کرد: " + ((r && r.error) || "نامشخص"), "bad");
+  } catch (e) { msg("خطا: " + e.message, "bad"); }
+}
+$("btn_validate").addEventListener("click", doValidate);
+
+function doRevert() {
+  for (const f of FIELDS) { state.current[f.k] = state.baseline[f.k]; setControl(f, state.baseline[f.k]); }
+  state.touched.clear();
+  refresh();
+  msg("تغییرات برگردانده شد", "warn");
+}
+$("btn_revert").addEventListener("click", doRevert);
+
+$("btn_toml_load").addEventListener("click", async () => {
+  try { $("toml").value = String(await api("/api/config/toml") || ""); msg("متن کانفیگ بارگذاری شد", "ok"); }
+  catch (e) { msg("خطا: " + e.message, "bad"); }
+});
+
+function confirmRawDangerousToml(body) {
+  const risky = [];
+  // This is only a confirmation gate; the server remains the TOML authority.
+  // Parse booleans by lines rather than relying on dynamically-built regexes,
+  // so the raw editor cannot silently bypass a warning due to escaping.
+  const lines = String(body).split(/\r?\n/);
+  const boolValue = (key, wanted) => lines.some((line) => {
+    const pair = line.split("=", 2);
+    return pair.length === 2 && pair[0].trim() === key && pair[1].trim() === wanted;
+  });
+  if (boolValue("intercept_all_tcp", "true")) risky.push("intercept_all_tcp");
+  if (boolValue("intercept_all_udp", "true")) risky.push("intercept_all_udp");
+  if (boolValue("enable_swap_foolers", "true")) risky.push("enable_swap_foolers");
+  if (boolValue("enable_oob_injection", "true")) risky.push("enable_oob_injection");
+  if (boolValue("relay_require_inject", "false")) risky.push("relay_require_inject=false");
+  if (!risky.length) return true;
+  return confirm("Raw TOML enables risky settings: " + risky.join(", ") +
+    ". The normal field-level confirmation was bypassed. Save anyway?");
+}
+
+$("btn_toml_validate").addEventListener("click", async () => {
+  const body = $("toml").value;
+  try {
+    const r = await api("/api/validate", {
+      method: "POST", headers: { "Content-Type": "text/plain" }, body
+    });
+    if (r && r.ok) msg("TOML معتبر است", "ok");
+    else msg("سرور رد کرد: " + ((r && r.error) || "نامشخص"), "bad");
+  } catch (e) { msg("خطا: " + e.message, "bad"); }
+});
+$("btn_toml_save").addEventListener("click", async () => {
+  try {
+    const body = $("toml").value;
+    if (!confirmRawDangerousToml(body)) return;
+    if (await postConfig(body)) setTimeout(() => { loadConfig(true).catch(() => {}); }, 1400);
+  } catch (e) { msg("خطا: " + e.message, "bad"); }
+});
+
+$("btn_token").addEventListener("click", () => {
+  $("tok").value = getToken();
+  $("ovl").classList.remove("hide");
+});
+$("tok_save").addEventListener("click", () => {
+  setToken($("tok").value.trim());
+  $("ovl").classList.add("hide");
+  // First session: boot() returned early before any interval existed, so the
+  // polling loop must be started here too. startPolling() is idempotent.
+  startPolling();
+  tick().then(() => loadConfig(true)).catch(() => {});
+});
+$("tok_clear").addEventListener("click", () => {
+  setToken(""); $("tok").value = ""; $("ovl").classList.add("hide");
+});
+
+$("btn_export").addEventListener("click", () => {
+  const data = {};
+  for (const f of FIELDS) if (!f.secret) data[f.k] = state.current[f.k];
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "dpi_guard_ui_settings.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$("btn_import").addEventListener("click", () => {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = ".json,application/json";
+  inp.addEventListener("change", () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const data = JSON.parse(String(rd.result));
+        let n = 0;
+        for (const f of FIELDS) {
+          if (f.secret || data[f.k] == null) continue;
+          state.current[f.k] = String(data[f.k]);
+          setControl(f, state.current[f.k]); n++;
+        }
+        refresh();
+        msg(n + " فیلد از فایل خوانده شد — برای اعمال، ذخیره را بزنید", "ok");
+      } catch (e) { msg("فایل JSON نامعتبر: " + e.message, "bad"); }
+    };
+    rd.readAsText(file);
+  });
+  inp.click();
+});
+
+document.addEventListener("click", async (e) => {
+  const p = e.target.getAttribute && e.target.getAttribute("data-p");
+  if (!p) return;
+  // One-click apply, but with an explicit confirmation first: switching the
+  // profile is immediate (no hot-reload wait) and affects every new flow.
+  if (!confirm('Switch the mutation profile to "' + p + '"? It applies immediately.')) return;
+  try {
+    await api("/api/profile", { method: "POST", body: JSON.stringify({ profile: p }) });
+    state.baseline.mutation_profile = p;
+    state.current.mutation_profile = p;
+    setControl(byKey.mutation_profile, p);
+    refresh();
+    msg("Profile changed to " + p, "ok");
+    setTimeout(tick, 400);
+  } catch (err) { msg("خطا: " + err.message, "bad"); }
+});
+
+/* Unsaved-changes guard: warn when leaving the page with a dirty form. */
+window.addEventListener("beforeunload", (e) => {
+  if (dirtyKeys().length) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
+/* ------------------------------- boot ------------------------------- */
+
+/* Polling loop. Idempotent: boot() starts it when a token already exists,
+   tok_save() starts it on the FIRST session (boot returned early there),
+   and a double start must not double the request rate. */
+let pollingTimer = null;
+function startPolling() {
+  if (pollingTimer !== null) return;
+  pollingTimer = setInterval(tick, 4000);
+}
+
+renderFields();
+for (const f of FIELDS) { state.current[f.k] = uiFromConfig({}, f); setControl(f, state.current[f.k]); }
+refresh();
+$("btn_live").classList.add("btn-on");
+
+(async function boot() {
+  if (!getToken()) { $("ovl").classList.remove("hide"); return; }
+  startPolling();
+  try {
+    await loadConfig(true);
+    await refreshStatus();
+    msg("", "");
+  } catch (e) {
+    $("conn").textContent = "قطع شد";
+    $("conn").className = "pill off";
+    msg("خطا: " + e.message, "bad");
+  }
+})();
+</script>
+</body>
+</html>

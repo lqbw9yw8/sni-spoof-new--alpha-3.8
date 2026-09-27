@@ -1,0 +1,34 @@
+[package]
+name = "dpi_guard-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+# Keep fuzz dependencies outside the production Cargo.toml. The targets call
+# only pure parsers; no WinDivert driver is needed.
+
+[dependencies]
+libfuzzer-sys = "0.4"
+dpi_guard = { path = ".." }
+
+[[bin]]
+name = "parse_packet"
+path = "fuzz_targets/parse_packet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_quic"
+path = "fuzz_targets/parse_quic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_fragmentation"
+path = "fuzz_targets/parse_fragmentation.rs"
+test = false
+doc = false
+bench = false
