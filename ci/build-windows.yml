@@ -1,0 +1,57 @@
+# Build dpi_guard.exe on GitHub-hosted Windows.
+# This is the REAL workflow (committed under .github/workflows/); the copy in
+# ci/build-windows.yml is a byte-identical template kept for reference.
+#
+# After a green run: Actions → this workflow → Artifacts → dpi_guard-windows
+# The artifact is the exe + example toml. It never bundles WinDivert.dll/sys:
+# fetch the official pinned release with scripts/fetch-windivert.ps1 and
+# verify the hashes before running the executable.
+
+name: build-windows-exe
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      # windivert-sys links WinDivert.lib from WINDIVERT_PATH (pinned to the
+      # repo root by .cargo/config.toml). The binaries are not in git — fetch
+      # the hash-pinned official release.
+      - name: Fetch pinned WinDivert SDK
+        shell: pwsh
+        run: ./scripts/fetch-windivert.ps1 -Arch x64
+
+      - name: Release build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Stage zip contents
+        shell: pwsh
+        run: |
+          $out = "dist"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\dpi_guard.exe" $out
+          Copy-Item "dpi_guard.toml.example" "$out\dpi_guard.toml.example"
+          Copy-Item "README.md" $out
+          Copy-Item "docs\archive\START_HERE.md" "$out\START_HERE.md"
+          @"
+          Put official WinDivert.dll + WinDivert64.sys next to dpi_guard.exe
+          (fetch them with scripts\fetch-windivert.ps1 — hash-verified). Then
+          copy dpi_guard.toml.example to dpi_guard.toml, set relay_connect_host
+          to your DOMAIN (no ping), and Run as administrator.
+          "@ | Set-Content -Encoding utf8 "$out\READ_ME_FIRST.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dpi_guard-windows
+          path: dist/
+          if-no-files-found: error

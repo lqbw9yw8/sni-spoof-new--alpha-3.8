@@ -1,0 +1,68 @@
+# Tag-driven release. Publishes dpi_guard.exe (built by GitHub-hosted
+# Windows) together with its SHA-256, exactly as README.md promises.
+# WinDivert.dll/sys are never bundled — the release notes point at the
+# hash-verified fetch script instead.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Fetch pinned WinDivert SDK
+        shell: pwsh
+        run: ./scripts/fetch-windivert.ps1 -Arch x64
+
+      - name: Release build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Stage release directory + SHA-256 sums
+        shell: pwsh
+        run: |
+          $out = "dist"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\dpi_guard.exe" $out
+          Copy-Item "dpi_guard.toml.example" "$out\dpi_guard.toml.example"
+          Copy-Item "README.md" $out
+          @"
+          WinDivert.dll and WinDivert64.sys are NOT in this zip. Fetch the
+          official pinned release (hash-verified) with:
+            powershell -ExecutionPolicy Bypass -File scripts\fetch-windivert.ps1
+          then place the three files next to dpi_guard.exe.
+          "@ | Set-Content -Encoding utf8 "$out\READ_ME_FIRST.txt"
+          $files = Get-ChildItem $out -File
+          $hashes = foreach ($f in $files) {
+            "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 $f.FullName).Hash, $f.Name
+          }
+          $hashes | Set-Content -Encoding ascii "$out\SHA256SUMS.txt"
+          Get-Content "$out\SHA256SUMS.txt"
+
+      - name: Zip release payload
+        shell: pwsh
+        run: Compress-Archive -Path dist\* -DestinationPath dpi_guard-${{ github.ref_name }}-windows.zip
+
+      - name: Create GitHub release with SHA-256 sums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "dpi_guard ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            "dpi_guard-${GITHUB_REF_NAME}-windows.zip" \
+            "dist/SHA256SUMS.txt"

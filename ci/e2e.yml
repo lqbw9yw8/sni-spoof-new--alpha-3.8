@@ -1,0 +1,104 @@
+# Field smoke test: load the REAL WinDivert driver on a real Windows runner,
+# start the actual dpi_guard.exe binary, exercise the web UI API, and stop it
+# through the same stop-file mechanism the native GUI uses.
+#
+# Manual/scheduled only (never on push): packet-capture drivers in shared CI
+# VMs are exactly the kind of thing you want to trigger by hand. Manual runs
+# are strict; scheduled runs report without red-spam (continue-on-error).
+
+name: e2e-field-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+
+jobs:
+  field-smoke:
+    runs-on: windows-latest
+    continue-on-error: ${{ github.event_name == 'schedule' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Fetch pinned WinDivert SDK
+        shell: pwsh
+        run: ./scripts/fetch-windivert.ps1 -Arch x64
+
+      - name: Release build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Stage runtime directory (exe + driver files)
+        shell: pwsh
+        run: |
+          $out = "runfield"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "target\x86_64-pc-windows-msvc\release\dpi_guard.exe" $out
+          Copy-Item "WinDivert.dll" $out
+          Copy-Item "WinDivert64.sys" $out
+          # Inert-but-real config: capture engine on a port nothing uses,
+          # relay disabled, dashboard bound to loopback with a bearer token.
+          @"
+          enable_web_ui = true
+          web_ui_port = 19090
+          web_ui_token = "e2e-field-smoke-token-0123456789"
+          relay_enabled = false
+          intercept_ports = [19443]
+          "@ | Set-Content -Encoding utf8 "$out\dpi_guard.toml"
+
+      - name: Start dpi_guard.exe (--backend, log to file)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "runfield\dpi_guard.exe" `
+            -ArgumentList "--backend", "$PWD\runfield\dpi_guard.toml" `
+            -WorkingDirectory "runfield" -PassThru -NoNewWindow `
+            -RedirectStandardOutput "runfield\out.log" `
+            -RedirectStandardError "runfield\err.log"
+          $p.Id | Set-Content "runfield\pid.txt"
+          Write-Host "started pid $($p.Id)"
+
+      - name: Probe /api/status with the bearer token
+        shell: pwsh
+        run: |
+          $deadline = (Get-Date).AddSeconds(60)
+          $ok = $false
+          while ((Get-Date) -lt $deadline) {
+            try {
+              $r = Invoke-RestMethod -Uri "http://127.0.0.1:19090/api/status" `
+                -Headers @{ Authorization = "Bearer e2e-field-smoke-token-0123456789" } `
+                -TimeoutSec 3
+              if ($null -ne $r) { $ok = $true; break }
+            } catch { Start-Sleep -Milliseconds 800 }
+          }
+          if (-not $ok) {
+            Get-Content "runfield\out.log" -ErrorAction SilentlyContinue
+            Get-Content "runfield\err.log" -ErrorAction SilentlyContinue
+            throw "dashboard /api/status never answered on 127.0.0.1:19090"
+          }
+          Write-Host "dashboard answered: $($r | ConvertTo-Json -Compress -Depth 2)"
+
+      - name: Graceful stop via <config>.stop
+        shell: pwsh
+        run: |
+          Set-Content -Encoding ascii "runfield\dpi_guard.toml.stop" "stop"
+          $p = Get-Process -Id (Get-Content "runfield\pid.txt") -ErrorAction SilentlyContinue
+          if ($p) {
+            $exited = $p.WaitForExit(30000)
+            if (-not $exited) { throw "dpi_guard.exe ignored the stop file" }
+            if ($p.ExitCode -ne 0) { throw "dpi_guard.exe exited with $($p.ExitCode)" }
+            Write-Host "graceful stop OK (exit $($p.ExitCode))"
+          } else {
+            throw "dpi_guard.exe already exited before the stop file"
+          }
+
+      - name: Upload field logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-field-logs
+          path: runfield/*.log
+          if-no-files-found: ignore

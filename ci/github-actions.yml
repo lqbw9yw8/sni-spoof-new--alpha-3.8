@@ -1,0 +1,81 @@
+# dpi_guard CI — test matrix
+#
+# Legacy template. The canonical always-on workflow is now
+# .github/workflows/ci.yml. This file remains for operators who import
+# workflows from ci/ in another checkout; it is not evidence that GitHub ran.
+#
+# Every pure-logic module builds and tests on Linux/macOS/Windows; the
+# Windows-only packet I/O (engine.rs) links on cfg(windows).
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  test:
+    name: test ${{ matrix.os }} / stable
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Build
+        run: cargo build --all-targets --verbose
+
+      - name: Test
+        run: cargo test --all-targets --verbose
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  webui:
+    # The dashboard (src/webui/index.html) is pure HTML/JS with no build
+    # step, so it gets its own job: it loads the REAL page in jsdom
+    # against a mock of the webui API and asserts every Settings field is
+    # editable, that validation matches Settings::validate, and that the
+    # emitted TOML parses with a real TOML parser.
+    name: dashboard UI tests (jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install harness dependencies
+        working-directory: uitest
+        run: npm ci
+
+      - name: Run dashboard + schema-coverage tests
+        working-directory: uitest
+        run: npm test
