@@ -1,0 +1,27 @@
+# cargo-deny policy. Keep this conservative: advisories are never ignored
+# here; the accepted unmaintained GUI dependency is documented in audit.toml.
+
+[advisories]
+version = 2
+
+[bans]
+multiple-versions = "warn"
+
+[licenses]
+# These are the licenses used by the direct and transitive dependency graph.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "LGPL-3.0-or-later",
+]
+confidence-threshold = 0.8
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

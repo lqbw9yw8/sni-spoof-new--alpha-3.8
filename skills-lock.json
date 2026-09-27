@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "skills": {
+    "refactoring-ui": {
+      "source": "wondelai/skills",
+      "sourceType": "github",
+      "skillPath": "refactoring-ui/SKILL.md",
+      "computedHash": "0c4f141cfd7e2d2d3b7dfd819bec15d0e9980b433b6376e6fbac3d33ff05c7d8"
+    },
+    "rust-best-practices": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "skillPath": "skills/rust-best-practices/SKILL.md",
+      "computedHash": "0ac6606adb27e64a31bdc8c1ed34e446ae0c14bff1c7648867c46e106adc048f"
+    },
+    "ui-design": {
+      "source": "mindrally/skills",
+      "sourceType": "github",
+      "skillPath": "ui-design/SKILL.md",
+      "computedHash": "d2b331ca97c47dc5d3e02557436b496469c3693327fad9a5f68c2b31e13349d1"
+    },
+    "ui-design-brain": {
+      "source": "carmahhawwari/ui-design-brain",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "2f879ee8afd07785c241b5fa31bcc96bb8efc2379cff1fff3167edd08ebe2790"
+    },
+    "vercel-composition-patterns": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/composition-patterns/SKILL.md",
+      "computedHash": "f98931159fa9c7fed043bcd18a891a46dcf89ababa38df13a4c5b7b30dc0ce07"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/web-design-guidelines/SKILL.md",
+      "computedHash": "a6a44d5498f7e8f68289902f3dedfc6f38ae0cee1e96527c80724cf27f727c2a"
+    },
+    "winui-app": {
+      "source": "openai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/.curated/winui-app/SKILL.md",
+      "computedHash": "6231a756230fbf412b05e38249d47c3ced6ab51944bcfb6ea3452f026bcbe848"
+    },
+    "winui-design": {
+      "source": "microsoft/win-dev-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/winui/agent-plugin/skills/winui-design/SKILL.md",
+      "computedHash": "ee1b64f65b1b878efb847316be7e07abd620588398bef7b0e472f5775d7cf394"
+    },
+    "winui-setup": {
+      "source": "microsoft/win-dev-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/winui/agent-plugin/skills/winui-setup/SKILL.md",
+      "computedHash": "fe57cf24cf20957307433bac6aec142b97e8fcd3a300ea117ef995ec26a9697e"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "dpi-guard-uitest",
+  "version": "1.0.0",
+  "description": "Browser-level tests for the dpi_guard dashboard (src/webui/index.html)",
+  "scripts": {
+    "test": "node test-ui.mjs && node check-rust-tests.mjs && node test-v2rayn.mjs && node test-resilience.mjs && node test-settings.mjs && node test-status.mjs",
+    "test:ui": "node test-ui.mjs",
+    "test:settings": "node test-settings.mjs",
+    "test:schema": "node check-rust-tests.mjs",
+    "preview": "node mock-server.mjs 8787",
+    "test:v2rayn": "node test-v2rayn.mjs",
+    "test:resilience": "node test-resilience.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "jsdom": "^30.0.1"
+  },
+  "private": true,
+  "type": "module"
+}

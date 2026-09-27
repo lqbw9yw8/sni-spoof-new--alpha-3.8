@@ -1,0 +1,275 @@
+# dpi_guard.toml — copy to dpi_guard.toml next to the binary and edit.
+# Hot-reloaded: dpi_guard polls this file's mtime every second
+# (see src/config.rs HotReloadWatcher).
+#
+# Logging: set RUST_LOG=dpi_guard=debug (default is dpi_guard=info).
+#
+# This crate is a patterniha-style local SNI-spoofing relay. There is NO
+# Xray/v2ray/sing-box core and no VPN: the destination IP is still visible
+# on the wire (that is inherent to SNI spoofing).
+
+# One of: "Stealth", "ChinaGfw", "RussiaDpi", "Aggressive", "ChinaRegional",
+# "Henan", "NestedCloak".
+# NestedCloak = Nested Extension Cloaking (2026): the visible SNI becomes a
+# benign cover (fronting_benign_sni, or a random big-brand cover), the real
+# name rides inside a private-range extension (0xFF01), and the record is
+# cut into 3 TCP segments at the hidden extension boundary. It mandates
+# combined fragmentation, chunk = min(32, len(real SNI)), disorder ON.
+mutation_profile = "Stealth"
+
+# TTL for decoy packets (must reach the DPI, die before the origin).
+decoy_ttl = 8
+idle_timeout_secs = 120
+
+# TCP payload chunk size for ClientHello segmentation.
+# 0 disables; must be 0 or >= 8 (1 is rejected).
+fragment_chunk_size = 64
+
+enable_decoys = true
+enable_sni_fragmentation = true
+enable_swap_foolers = false
+enable_kill_switch = false
+kill_switch_adapter = ""
+
+# ---------------------------------------------------------------------------
+# ALL PORTS default
+# ---------------------------------------------------------------------------
+# By default dpi_guard intercepts ALL TCP and UDP ports in both directions,
+# EXCEPT SSH (22), DNS (53), and RDP (3389). WinDivert deliberately leaves
+# these ports alone: SSH/RDP stay available, while outbound plaintext DNS is
+# handled by the mandatory Windows WFP guard (blocked except loopback). To narrow it,
+# set intercept_all_* = false and list ports in intercept_ports.
+intercept_all_tcp = true
+intercept_all_udp = true
+intercept_ports = []   # used only when both wildcard flags above are false
+
+# ---------------------------------------------------------------------------
+# Optional local dashboard (http://127.0.0.1:9090)
+# ---------------------------------------------------------------------------
+# The example enables it; in compiled Default it stays OFF. Binds loopback
+# only; Host must be 127.0.0.1 (localhost is rejected); every /api route
+# requires a bearer token; failed auth is throttled (80 ms on 401).
+enable_web_ui = true
+web_ui_port = 9090
+# Leave empty to auto-generate a token (printed to the log at startup).
+web_ui_token = ""
+
+# ---------------------------------------------------------------------------
+# Desync / fragmentation options (2026 hardening)
+# ---------------------------------------------------------------------------
+# Split ClientHello into multiple 0x16 TLS records.
+# Re-frame the ClientHello as a run of valid TLS records instead of cutting
+# the TCP payload at byte offsets. Defaults OFF: it changes the wire format
+# for every TLS flow, so turn it on deliberately.
+enable_tls_record_fragmentation = false
+tls_record_chunk_size = 0          # 0 = use fragment_chunk_size
+# Split a TLS record immediately before the SNI name.
+enable_frag_by_sni = false
+# Split a TLS record *inside* the SNI name (mid-name straddle): no single
+# record contains the full hostname (2026 roadmap #1).
+enable_frag_mid_sni = false
+# Grow the ClientHello with a random-length TLS padding extension per
+# connection (RFC 7685): breaks fixed-size fingerprints and offset-based
+# SNI extractors (2026 roadmap #2).
+enable_padding_inflation = false
+# Per-connection strategy rotation + escalation (2026 roadmap #4 + #6):
+# weighted-random pick among techniques that already scored positively for a
+# domain, ladder-climb when the configured profile scores negative, and
+# score decay every 32 feedback events so old history fades.
+enable_strategy_rotation = false
+# Learn decoy TTL from the inbound hop count.
+enable_autottl = false
+autottl_delta = 0                  # 0..=32
+# Split the HTTP Host: header into its own TCP segment (plaintext HTTP).
+enable_http_host_tricks = false
+# Pick desync mode per-flow from strategy scores.
+enable_adaptive_desync = false
+
+# SNI allow/deny for fake injection (exact or *.example.com):
+sni_only = []
+sni_except = []
+
+# ---------------------------------------------------------------------------
+# Other evasion toggles
+# ---------------------------------------------------------------------------
+enable_quic_port_bypass = false
+quic_bypass_use_low_port = false
+enable_sni_disguise = false
+fronting_benign_sni = ""
+enable_combined_fragmentation = true
+enable_utls_fingerprint = false
+utls_browser = "chrome"
+# Always-on ECH GREASE: every hello carries an extension of the *real* ECH
+# type (0xFE0D) with a random payload, so "has ECH / no ECH" classification
+# is useless. Servers that don't implement ECH ignore it.
+enable_ech_grease = false
+# Real ECH (2026 roadmap #5): seal the real SNI inside an inner
+# ClientHello; the outer hello shows the ECHConfig's public_name.
+# Requires the ECHConfigList of the destination — the `ech` SvcParamValue
+# of its DNS HTTPS record — as hex in real_ech_config_hex. Implemented
+# stack: DHKEM(X25519) + HKDF-SHA256 + ChaCha20Poly1305 (RFC 9180/8439).
+# The destination server must actually support ECH (e.g. behind Cloudflare).
+enable_real_ech = false
+real_ech_config_hex = ""
+enable_md5sig_fooling = false
+enable_geedge_evasion = true
+
+# Pin the official WinDivert binary SHA-256 digests (supply-chain hardening).
+#
+# The two values below are the SHA-256 of the official WinDivert 2.2.2 x64
+# release (WinDivert-2.2.2-A.zip, from
+# https://github.com/basil00/WinDivert/releases). They are the same pins
+# scripts/fetch-windivert.sh / .ps1 verify against.
+#
+# Recompute them for YOUR OWN download before trusting them:
+#   Windows:  certutil -hashfile WinDivert.dll SHA256
+#             certutil -hashfile WinDivert64.sys SHA256
+#   Linux:    sha256sum WinDivert.dll WinDivert64.sys
+#
+# engine::version_check refuses to start unless both pins are present and
+# each file next to dpi_guard.exe matches its ordered digest. An empty list is
+# accepted only by the config parser for redacted/partial UI round-trips; the
+# Windows runtime refuses to load an unpinned driver.
+win_divert_sha256 = [
+  "c1e060ee19444a259b2162f8af0f3fe8c4428a1c6f694dce20de194ac8d7d9a2", # WinDivert.dll   (2.2.2 x64)
+  "8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2", # WinDivert64.sys (2.2.2 x64)
+]
+
+# ---------------------------------------------------------------------------
+# PARTIAL-BACKED FIELDS — valid Settings, safe to leave at these defaults
+# ---------------------------------------------------------------------------
+# Optional relay-mode destination rotation. When non-empty, each new local
+# relay connection uses the next validated IP in this operator-owned list;
+# transparent WinDivert flows are never rewritten mid-connection. The list is
+# ignored while relay_enabled=false, so leave it empty in transparent mode.
+rotate_ips = []   # e.g. ["1.1.1.1", "1.0.0.1"]
+
+# trusted_dns is a legacy redirect setting and is deliberately NOT accepted
+# when non-empty. A user-mode WFP block cannot redirect; a signed kernel
+# callout would be required. Use doh_server / relay_resolve_doh instead.
+# Keeping the key commented preserves old-file diagnostics without promising
+# an unsupported feature. If an old file contains it, startup fails closed.
+# trusted_dns = "9.9.9.9"  # rejected: signed WFP redirect callout is absent
+
+# ---------------------------------------------------------------------------
+# RELAY MODE (patterniha-style local relay)
+# ---------------------------------------------------------------------------
+# v2rayN / your local TLS client connects to 127.0.0.1:<relay_listen_port> and
+# presents the REAL server domain as SNI. dpi_guard connects to
+# relay_connect_host:relay_connect_port and injects a fake ClientHello with
+# relay_fake_sni (wrong_seq) so the DPI sees a benign name.
+#
+# THE LISTEN PORT IS YOURS. Pick any free port (1..=65535) and put THE SAME
+# number in v2rayN (Address=127.0.0.1, Port=<that number>). 40443 is only a
+# suggestion so it does not clash with v2rayN's own 10808/10809/10853 or
+# with web_ui_port. Do not use 22 / 53 / 3389.
+#
+# relay_connect_host can be a DOMAIN or an IP.
+# Domain: dpi_guard looks up the real IPv4 itself via DoH.
+#         Do NOT ping the host in CMD and paste the IP (old patterniha video).
+#         No UDP/53 fallback. Keep relay_resolve_doh = true.
+# IP:     optional. Only if you already know it.
+#
+# v2rayN SNI is still the REAL domain. This field is only "where to TCP-connect".
+
+relay_enabled = true
+relay_listen_port = 40443   # change me; match v2rayN Port exactly
+relay_connect_host = "server.example.com"   # domain OK — DoH finds the IP
+# relay_connect_host = "1.2.3.4"            # or put an IP if you already know it
+relay_connect_port = 443
+relay_fake_sni = "www.microsoft.com"
+relay_resolve_doh = true
+relay_mutate_real_sni = false
+relay_emit_decoy = false
+
+# Fail-CLOSED: if the fake ClientHello is not ACK-confirmed within 3 seconds,
+# the relay DROPS the connection so the real ClientHello is never forwarded.
+# Leave this true. Setting it false falls through to relaying anyway.
+relay_require_inject = true
+
+# DNS-over-HTTPS endpoint. The built-in Cloudflare hostname keeps normal
+# TLS certificate/SNI verification; its resolver uses the pinned 1.1.1.1 and
+# 1.0.0.1 addresses, so the default still avoids mutable bootstrap DNS.
+# There is deliberately NO fallback to plaintext UDP/53. Only A queries are
+# sent (no AAAA). 127.0.0.1 / localhost / metadata hosts are rejected.
+doh_server = "https://cloudflare-dns.com/dns-query"
+
+# ---------------------------------------------------------------------------
+# 25 NEW FEATURES (2026 upgrade)
+# ---------------------------------------------------------------------------
+
+# ISP-specific profile: mci, irancell, auto, russia, china, generic
+# Each profile sets recommended mutation, fragmentation, and fake-SNI.
+isp_profile = "auto"
+
+# SNI scanner: probe candidate SNIs and rank by latency/success
+enable_sni_scanner = false
+sni_candidates = []   # empty = use built-in defaults
+edge_candidates = []  # additional CDN edge IPs to probe
+
+# SNI pool rotation: round_robin, weighted_random, lru
+# Instead of a single fixed fake SNI, rotate through a pool.
+sni_rotation_mode = "round_robin"
+
+# Anti-fingerprint: randomize timing, packet size, IP-ID
+enable_anti_fingerprint = false
+injection_delay_min_ms = 1      # min delay before fake injection (ms)
+injection_delay_max_ms = 10     # max delay (ms)
+max_packet_padding = 0          # max random padding bytes (0 = off)
+randomize_ip_id = false         # randomize IPv4 ID field
+randomize_packet_size = false   # pad packets to random sizes
+
+# Fake-with-SNI: generate realistic browser-mimic fake ClientHello
+enable_fake_with_sni = false
+fake_browser = "firefox"        # firefox, chrome, safari, edge, random
+
+# Reverse fragmentation (GoodbyeDPI / zapret style)
+enable_reverse_frag = false
+
+# GoodbyeDPI-style wrong-seq + wrong-checksum.
+# Both default to TRUE: that is what a decoy needs in order to be ignored by
+# the real server. Turning one off makes the decoy a genuine packet that the
+# destination will accept — only do that if you know why.
+enable_wrong_seq = true
+enable_wrong_checksum = true
+
+# OOB (Out-of-Band) data injection (zapret style)
+enable_oob_injection = false
+
+# Host-dot: add dot after hostname in HTTP Host header (zapret)
+enable_hostdot = false
+
+# Max payload cap: skip mutation for payloads larger than this (bytes)
+# Reduces CPU on large transfers. 0 = no limit.
+max_payload_size = 1200
+
+# Fake resend: send the fake packet N times (GoodbyeDPI)
+fake_resend_count = 1
+
+# Self-update: check GitHub releases for updates. update_repo must be a repo
+# that actually resolves; it was previously a name that 404'd, so the check
+# could only ever fail. Note: until a release is published on that repo the
+# check honestly reports "no release found" instead of an update.
+enable_self_update = false
+update_repo = "lqbw9yw8/sni-spoof-new--alpha-3.6"
+
+# Auto-detect running proxy clients (v2rayN, Xray, sing-box, etc.)
+enable_client_detect = false
+
+# Graceful proxy cleanup: restore system proxy settings on exit
+enable_proxy_cleanup = true
+
+# YouTube warmup: pre-connect to googlevideo.com for faster video start
+enable_youtube_warmup = false
+
+# Mobile gateway: share connection with LAN devices
+enable_mobile_gateway = false
+
+# IP-set / hostname filtering (zapret style): only intercept listed hosts
+ipset_hostlist = []
+
+# AutoTTL scale (GoodbyeDPI-style: a1-a2-m)
+# a1 = min reduction, a2 = close-distance reduction, m = max distance
+autottl_scale_a1 = 0
+autottl_scale_a2 = 4
+autottl_scale_max = 10

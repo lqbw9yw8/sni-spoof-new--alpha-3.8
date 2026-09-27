@@ -1,0 +1,20 @@
+# cargo-audit policy for dpi_guard.
+#
+# Last real `cargo audit` run: 2026-08-29 (cargo-audit 0.22.2, RustSec
+# advisory-db with 1226 advisories). Result: 0 vulnerabilities, 1 warning.
+#
+# [warnings.unmaintained] entries below are *accepted*, each with a reason.
+# Nothing here ignores an actual vulnerability (RUSTSEC vurnerability IDs
+# are never listed) — re-run `cargo audit` after any dependency change.
+
+[warnings]
+unmaintained = "all"
+
+[[ignore]]
+# ttf-parser 0.25.1 — pulled in transitively by eframe/egui 0.29 (the
+# optional native GUI). Rendering-only crate, no network/packet path.
+# Unmaintained upstream, no known vulnerability. Upgrading means a 3-major-
+# version eframe bump that cannot be field-verified from this repo; revisit
+# when eframe's next LTS lands.
+id = "RUSTSEC-2026-0192"
+reason = "unmaintained transitive dep of the optional native GUI; no vulnerability"
