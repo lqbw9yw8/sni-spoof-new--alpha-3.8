@@ -1,0 +1,41 @@
+# Restored after this checkout's "squash upload" dropped it again — see
+# CHANGELOG.md ("Restoring .github/workflows/ and .gitignore after the
+# squash upload") and docs/archive/GAPS_2026-09.md item 6. Without this
+# file every `git add -A` re-commits build caches, the WinDivert driver
+# binaries, and local runtime state that can contain your relay server's
+# IP address.
+
+# Rust build output / IDE build-check cache (rust-analyzer flycheck, etc).
+target/
+**/target/
+
+# WinDivert redistributables — fetched at build time with a pinned SHA-256
+# by scripts/fetch-windivert.ps1 / scripts/fetch-windivert.sh (see README
+# and build-windows.bat). Never commit the binaries themselves.
+*.dll
+*.lib
+*.sys
+*.exe
+
+# Local runtime state written next to the built binary — may contain the
+# relay server's IP/address (see src/dns_cache.rs, src/observability.rs).
+dpi_guard.toml
+dpi_guard.dns_cache
+dpi_guard.proxy_state
+dpi_guard.instance.lock
+*.toml.stop
+
+# dpi_guard.toml.example is the tracked template read via
+# CARGO_MANIFEST_DIR (src/config.rs) — keep it even though *.toml-ish
+# runtime files above are ignored.
+!dpi_guard.toml.example
+
+# Node/jsdom test tooling (uitest/).
+node_modules/
+uitest/node_modules/
+
+# Misc OS/editor cruft and archives that should never be committed wholesale.
+.DS_Store
+Thumbs.db
+*.zip
+*.tar.gz

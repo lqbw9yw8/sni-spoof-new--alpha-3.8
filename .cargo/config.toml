@@ -1,0 +1,15 @@
+# Restored per CHANGELOG.md ("Restoring .cargo/config.toml, the third lost
+# file") and docs/archive/GAPS_2026-09.md item 12.
+#
+# Forces WINDIVERT_PATH to the repo root for every `cargo` invocation so the
+# windivert-sys 0.9.3 build script (build/main.rs:22, fs::read_dir(&lib_path))
+# never panics with `Os { code: 3, kind: NotFound }` because of a stale
+# WINDIVERT_PATH left over in the environment from another project.
+#
+# - force = true      -> overwrites any pre-existing WINDIVERT_PATH env var.
+# - relative = true   -> "." resolves to this file's directory (the repo
+#                         root), which is exactly where build-windows.bat /
+#                         scripts/fetch-windivert.ps1 place WinDivert.dll,
+#                         WinDivert.lib and WinDivert64.sys.
+[env]
+WINDIVERT_PATH = { value = ".", force = true, relative = true }
