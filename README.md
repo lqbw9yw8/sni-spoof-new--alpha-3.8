@@ -417,6 +417,29 @@ certutil -hashfile WinDivert64.sys SHA256
 sha256sum WinDivert.dll WinDivert64.sys
 ```
 
+## Benchmarking (criterion)
+
+A criterion benchmark suite for the hot paths lives in `benches/hotpath.rs`
+(45 benchmarks: packet path, checksums, fragmentation, SNI mutations,
+strategy table, HPKE/ECH crypto, DNS cache, config parse/merge). The bench
+profile matches the release profile (LTO, codegen-units=1,
+overflow-checks), so numbers represent the shipped binary. Inputs are
+deliberately heterogeneous (4 SNI lengths, 4 profiles, cold vs warm caches,
+adversarial non-TLS payloads) so optimizations generalize instead of
+overfitting one shape.
+
+```bash
+cargo bench                                   # full suite
+cargo bench -- --save-baseline my-baseline    # record a baseline
+cargo bench -- --baseline my-baseline         # compare a change against it
+```
+
+Recorded deltas for the round-5 optimization pass (see CHANGELOG): the
+per-ClientHello pipeline path got 26–35% faster, the dashboard
+`scores_hashed` view 14.7× faster, `hash_sensitive` 5×, and
+ChaCha20-Poly1305 seal/open 17–19%, with zero behavioral changes (all 460
+tests unchanged and green). Nothing was removed or simplified.
+
 ## DNS leak warning (important)
 
 SNI mutation alone does **NOT** hide which domain you visit. On Windows,

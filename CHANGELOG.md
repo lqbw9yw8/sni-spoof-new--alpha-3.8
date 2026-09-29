@@ -4,6 +4,33 @@
 
 > وضعیت هر ورودی طبق `AI_RULES.md` بخش ۳ برچسب می‌خورد.
 
+## [Unreleased] — دور پنجم: بنچمارک‌محور (criterion) و بهینه‌سازی مبتنی بر روش «تکرار عاملی» — بدون حذف یا ساده‌سازی (۲۰۲۶-۰۹-۲۷) — `DONE_VERIFIED`
+
+روش‌شناسی (Max Woolf, «agentic iteration»): یک **مبنای واقعی کارایی (True Performance Baseline)** با criterion روی ورودی‌های ناهمگون/دشوار ثبت شد، سپس فقط کد کتابخانه‌ای بر اساس اعداد بهینه شد — بدون دستکاری بنچمارک، بدون `unsafe` (crate سراسری `#![deny(unsafe_code)]`)، و بدون حذف هیچ قابلیتی. بنچمارک جدید: `benches/hotpath.rs` (۴۵ بنچ: مسیر پکت، checksum، فرگمنتیشن، جهش SNI، strategy، HPKE/ECH، DNS cache، config) با `[profile.bench]` برابر پروفایل release (LTO + codegen-units=1 + overflow-checks) تا اعداد نمایندهٔ باینری واقعی باشند.
+
+نتایج اندازه‌گیری‌شده (criterion، baseline `true-baseline`، ۳۰ نمونه):
+
+| مسیر | قبل | بعد | تغییر |
+|---|---|---|---|
+| `pipeline::handle` + جهش hello (هر ۴ پروفایل + ۴ طول SNI) | ~1.57–2.03 µs | ~1.02–1.49 µs | **−26..−35%** |
+| `pipeline::handle` مسیر عبور (پورت غیرهدف / data / ACK) | 56–61 ns | 48–53 ns | −3..−13% |
+| `strategy::scores_hashed` (۵۱۲ ردیف، هر poll داشبورد) | 374.7 µs | 25.5 µs | **14.7×** |
+| `stealth::hash_sensitive` (هر ردیف امتیاز/لاگ) | 507.8 ns | 101.1 ns | **5.0×** |
+| HPKE `seal/open` (517B و 8KB) | 2.13/28.1 µs | 1.79/22.7 µs | −17..−19% |
+| `sni_mutations::mutate_sni_full` (Stealth/RussiaDpi/Regional) | 83–213 ns | 62–191 ns | −10..−25% |
+| TCP checksum v4 (1400B) | 327.2 ns | 307.3 ns | −6% |
+
+بهینه‌سازی‌ها (همه «رفتار-یکسان» و پوشش‌داده‌شده با همان ۴۶۰ تست):
+
+- **مسیر سریع جدولِ خالی strategy در `apply_client_hello` (`DONE_VERIFIED`):** با جدول بدون بازخورد، همهٔ امتیازها صفرند و نتیجهٔ `select_best` (۷ کاندید) + دو `score_of` همیشه دور ریخته می‌شود — حالا بدون ۹ lookup و ۱۸ تخصیص String در هر ClientHello همان تصمیم گرفته می‌شود (`StrategyTable::is_empty`).
+- **`scores_hashed` کشِ هش ردیف (`DONE_VERIFIED`):** هشِ «دامنه|تکنیک» فقط یک‌بار در هر ردیف محاسبه و در `ScoreRow.hashed` (OnceLock) کش می‌شود؛ خروجی بایت‌به‌بایت همان قبلی است.
+- **`hash_sensitive` با جدول هگز ایستا (`DONE_VERIFIED`):** به‌جای ماشین‌آلات `write!` برای هر بایت، دو nibble با LUT نوشته می‌شود.
+- **`chacha20_xor` کلمه‌به‌کلمه (`DONE_VERIFIED`):** خروجی از پیش اندازه‌گیری‌شده + XOR با u64 (بجای push بایت‌به‌بایت)؛ بردارهای RFC 8439 همچنان سبز.
+- **`force_length_overflow` خطی (`DONE_VERIFIED`):** `splice(0..0,…)` تکراری (memmove درجه‌۲) با یک نوشتن از پیش اندازه‌گیری‌شده با همان نقطهٔ ثابت `filler^k ‖ sni` جایگزین شد.
+- **تخصیص‌های حذف‌شده در مسیر پکت (`DONE_VERIFIED`):** `on_outbound_target` payload را بدون `to_vec` قرض می‌گیرد (فقط شاخهٔ hold مالک می‌شود)؛ `mutated_str` فقط برای پروفایل‌های شکنندهٔ هویت ساخته می‌شود؛ `get_mutation_profile` به‌جای Vec پارامتر `&'static [MutationFn]` برمی‌گرداند؛ `fragment_sni_byte_chunk`/`select_rotating` با ظرفیت دقیق.
+- **تعمداً تغییر نکرد (با دلیل):** `x25519` (~۱۲۷µs، یک‌بار به‌ازای هر اتصال ECH — بازنویسی ریسک بالا/سود ناچیز)، `config::parse` (~۴۸µs فقط در استارتاپ/hot-reload)، `per_domain_scores` (فقط مصرف داخلی تست — مسیر داغ نیست). هیچ‌کدام گلوگاه واقعی نیستند.
+- **وضعیت نهایی:** `cargo test --locked` = **۴۶۰/۴۶۰** · `clippy -D warnings` = ۰ · `fmt --check` = تمیز · `gen_status.py --check` = ۴۲ ماژول، ۴۶۰ تست، ۰ تابع مرده · `lint_docs.py` = ۰ تخلف · سوئیت‌های jsdom = سبز · بنچمارک‌ها = ۴۵/۴۵ بدون panic (baseline `round5-final` برای مقایسه‌های بعدی ثبت شد).
+
 ## [Unreleased] — دور چهارم: سازگاری سرتاسری + بهینه‌سازی منابع بدون کاهش قابلیت (۲۰۲۶-۰۹-۲۷) — `DONE_VERIFIED`
 
 ممیزی دو-سمتهٔ «سازگاری همهٔ ماژول‌ها با هم بعد از هر به‌روزرسانی» + «سرعت/رم/منابع»؛

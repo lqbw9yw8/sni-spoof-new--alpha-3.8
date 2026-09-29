@@ -8,10 +8,12 @@ license = "MIT"
 [lib]
 name = "dpi_guard"
 path = "src/lib.rs"
+bench = false
 
 [[bin]]
 name = "dpi_guard"
 path = "src/main.rs"
+bench = false
 
 [dependencies]
 rand = "0.8"
@@ -39,6 +41,22 @@ socket2 = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 windivert = { version = "0.5", features = ["vendored"] }
+
+[dev-dependencies]
+# Benchmark harness for the hot-path regression suite (benches/hotpath.rs).
+criterion = "0.5"
+
+[[bench]]
+name = "hotpath"
+harness = false
+
+[profile.bench]
+# Keep bench runs identical to production: same overflow policy so measured
+# numbers represent the shipped binary. (panic is ignored for bench profile.)
+overflow-checks = true
+lto = true
+codegen-units = 1
+
 
 [profile.release]
 # catch_unwind in fail_open requires unwind. abort would black-hole packets.
