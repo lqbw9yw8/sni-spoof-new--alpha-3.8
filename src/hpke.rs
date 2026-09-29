@@ -548,16 +548,28 @@ fn chacha20_block(key: &[u8; 32], counter: u32, nonce: &[u8; 12]) -> [u8; 64] {
 
 /// ChaCha20 keystream XOR (encryption and decryption are the same op).
 pub fn chacha20_xor(key: &[u8; 32], counter: u32, nonce: &[u8; 12], data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len());
+    // Pre-sized output + word-at-a-time XOR: the old loop pushed one byte
+    // at a time (bounds check + branch per byte). Same output bytes.
+    let mut out = vec![0u8; data.len()];
     let mut block_index = counter;
-    let mut pos = 0;
-    while pos < data.len() {
+    let mut done = 0usize;
+    while done < data.len() {
         let block = chacha20_block(key, block_index, nonce);
-        let take = (data.len() - pos).min(64);
-        for i in 0..take {
-            out.push(data[pos + i] ^ block[i]);
+        let take = (data.len() - done).min(64);
+        let src = &data[done..done + take];
+        let dst = &mut out[done..done + take];
+        let mut i = 0;
+        while i + 8 <= take {
+            let w = u64::from_le_bytes(src[i..i + 8].try_into().unwrap())
+                ^ u64::from_le_bytes(block[i..i + 8].try_into().unwrap());
+            dst[i..i + 8].copy_from_slice(&w.to_le_bytes());
+            i += 8;
         }
-        pos += take;
+        while i < take {
+            dst[i] = src[i] ^ block[i];
+            i += 1;
+        }
+        done += take;
         block_index = block_index.wrapping_add(1);
     }
     out

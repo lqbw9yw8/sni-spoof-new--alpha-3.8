@@ -25,7 +25,18 @@ impl Score {
 /// Key: (domain, technique_name).
 #[derive(Clone)]
 pub struct StrategyTable {
-    scores: Arc<DashMap<(String, String), Arc<Score>>>,
+    scores: Arc<DashMap<(String, String), Arc<ScoreRow>>>,
+}
+
+/// One table row: the score plus a lazily-materialized dashboard hash.
+/// The hash ("<salted-domain>|<tech>") depends only on the immutable key
+/// and the per-process salt, so it is computed at most once per row and
+/// cloned on every dashboard poll instead of re-running SHA-256 for the
+/// whole table (was O(rows) full hashes per poll).
+#[derive(Debug, Default)]
+pub struct ScoreRow {
+    score: Score,
+    hashed: std::sync::OnceLock<String>,
 }
 
 impl StrategyTable {
@@ -35,7 +46,14 @@ impl StrategyTable {
         }
     }
 
-    fn entry(&self, domain: &str, technique: &str) -> Arc<Score> {
+    /// True when no feedback has ever been recorded. Read paths use this
+    /// to skip per-ClientHello lookups whose result is provably the same
+    /// as reading score 0 (an empty table makes every score read 0).
+    pub fn is_empty(&self) -> bool {
+        self.scores.is_empty()
+    }
+
+    fn entry(&self, domain: &str, technique: &str) -> Arc<ScoreRow> {
         let key = (domain.to_string(), technique.to_string());
         if let Some(existing) = self.scores.get(&key) {
             return existing.clone();
@@ -44,11 +62,11 @@ impl StrategyTable {
             // Ephemeral: do not remember a new domain once the table is
             // full. Existing keys still update. Slight TOCTOU overshoot
             // under concurrency is acceptable.
-            return Arc::new(Score::default());
+            return Arc::new(ScoreRow::default());
         }
         self.scores
             .entry(key)
-            .or_insert_with(|| Arc::new(Score::default()))
+            .or_insert_with(|| Arc::new(ScoreRow::default()))
             .clone()
     }
 
@@ -64,7 +82,7 @@ impl StrategyTable {
     pub fn score_of(&self, domain: &str, technique: &str) -> i64 {
         self.scores
             .get(&(domain.to_string(), technique.to_string()))
-            .map(|e| e.value().value())
+            .map(|e| e.value().score.value())
             .unwrap_or(0)
     }
 
@@ -94,6 +112,7 @@ impl StrategyTable {
     pub fn update_score(&self, domain: &str, technique: &str, success: bool) -> i64 {
         let delta = if success { 1 } else { -2 };
         self.entry(domain, technique)
+            .score
             .0
             .fetch_add(delta, Ordering::Relaxed)
             + delta
@@ -103,18 +122,18 @@ impl StrategyTable {
     /// for the dashboard). Static so the watchdog can build it from an
     /// Arc-cloned table without holding the pipeline lock.
     pub fn scores_hashed(&self) -> Vec<(String, i64)> {
-        self.all_scores()
-            .into_iter()
-            .map(|(k, v)| {
-                let (domain, tech) = k.split_once('|').unwrap_or((k.as_str(), ""));
-                (
+        self.scores
+            .iter()
+            .map(|entry| {
+                let key = entry.key();
+                let hashed = entry.value().hashed.get_or_init(|| {
                     format!(
                         "{}|{}",
-                        crate::stealth::hash_sensitive(domain, crate::stealth::run_salt()),
-                        tech
-                    ),
-                    v,
-                )
+                        crate::stealth::hash_sensitive(&key.0, crate::stealth::run_salt()),
+                        key.1
+                    )
+                });
+                (hashed.clone(), entry.value().score.value())
             })
             .collect()
     }
@@ -125,7 +144,7 @@ impl StrategyTable {
         self.scores
             .iter()
             .filter(|entry| entry.key().0 == domain)
-            .map(|entry| (entry.key().1.clone(), entry.value().value()))
+            .map(|entry| (entry.key().1.clone(), entry.value().score.value()))
             .collect()
     }
 
@@ -137,7 +156,7 @@ impl StrategyTable {
     /// as often. Returns `None` when nothing has won yet; the caller falls
     /// back to deterministic selection (new domains behave as before).
     pub fn select_rotating(&self, domain: &str, candidates: &[&str]) -> Option<String> {
-        let mut positives: Vec<(&str, i64)> = Vec::new();
+        let mut positives: Vec<(&str, i64)> = Vec::with_capacity(candidates.len());
         let mut total: i64 = 0;
         for &name in candidates {
             let score = self.score_of(domain, name);
@@ -166,9 +185,9 @@ impl StrategyTable {
     /// keeps tracking the DPI's *current* behaviour instead of last month's.
     pub fn decay_all(&self) {
         for entry in self.scores.iter() {
-            let v = entry.value().value();
+            let v = entry.value().score.value();
             if v != 0 {
-                entry.value().0.store(v / 2, Ordering::Relaxed);
+                entry.value().score.0.store(v / 2, Ordering::Relaxed);
             }
         }
     }
@@ -180,7 +199,7 @@ impl StrategyTable {
             .map(|entry| {
                 (
                     format!("{}|{}", entry.key().0, entry.key().1),
-                    entry.value().value(),
+                    entry.value().score.value(),
                 )
             })
             .collect()

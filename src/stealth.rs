@@ -195,18 +195,23 @@ pub fn shape_fingerprint(fp: &mut BrowserFingerprint) {
 }
 
 pub fn hash_sensitive(value: &str, salt: &[u8]) -> String {
-    use std::fmt::Write as _;
     let mut hasher = Sha256::new();
     hasher.update(salt);
     hasher.update(value.as_bytes());
     let digest = hasher.finalize();
-    // One pre-sized String + one write per byte: the old per-byte
-    // `format!("{:02x}")` made every hash 32 separate heap allocations,
-    // and this runs per logged domain/endpoint across the whole program.
-    let mut out = String::with_capacity(digest.len() * 2);
-    for b in digest {
-        let _ = write!(out, "{:02x}", b);
+    // One pre-sized String + a static hex lookup table: the original
+    // per-byte `format!("{:02x}")` paid the full formatting machinery per
+    // byte; the LUT writes both nibbles with two indexed loads. This runs
+    // per logged domain/endpoint and per score-table row across the
+    // program, so the hex encode is kept allocation-free.
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut hex = [0u8; 64];
+    for (i, b) in digest.iter().enumerate() {
+        hex[i * 2] = HEX[(b >> 4) as usize];
+        hex[i * 2 + 1] = HEX[(b & 0x0f) as usize];
     }
+    let mut out = String::with_capacity(hex.len());
+    out.push_str(std::str::from_utf8(&hex).unwrap_or_default());
     out
 }
 

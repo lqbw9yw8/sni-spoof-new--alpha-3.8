@@ -1,5 +1,5 @@
 {
-  "commit": "9f08fa8",
+  "commit": "unknown",
   "modules": {
     "anti_fingerprint": {
       "lines": 192,
@@ -100,7 +100,7 @@
       "unsafe": false
     },
     "fragmentation": {
-      "lines": 1106,
+      "lines": 1108,
       "tests": 25,
       "tag": "UNTESTED",
       "win": 0,
@@ -121,7 +121,7 @@
       "unsafe": false
     },
     "hpke": {
-      "lines": 1058,
+      "lines": 1070,
       "tests": 12,
       "tag": "UNTESTED",
       "win": 0,
@@ -198,7 +198,7 @@
       "unsafe": false
     },
     "pipeline": {
-      "lines": 3428,
+      "lines": 3449,
       "tests": 50,
       "tag": "PARTIAL",
       "win": 0,
@@ -254,21 +254,21 @@
       "unsafe": true
     },
     "sni_mutations": {
-      "lines": 542,
+      "lines": 553,
       "tests": 20,
       "tag": "UNTESTED",
       "win": 0,
       "unsafe": false
     },
     "stealth": {
-      "lines": 548,
+      "lines": 553,
       "tests": 17,
       "tag": "PARTIAL",
       "win": 0,
       "unsafe": false
     },
     "strategy": {
-      "lines": 435,
+      "lines": 454,
       "tests": 11,
       "tag": "UNTESTED",
       "win": 0,

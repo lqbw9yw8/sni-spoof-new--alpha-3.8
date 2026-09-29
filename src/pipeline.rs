@@ -769,7 +769,7 @@ impl Pipeline {
         raw: &[u8],
         parsed: &ParsedPacket,
     ) -> Result<WireAction, DpiGuardError> {
-        let payload = parsed.payload(raw).to_vec();
+        let payload = parsed.payload(raw);
         if payload.is_empty() {
             return Ok(WireAction::Passthrough);
         }
@@ -787,23 +787,23 @@ impl Pipeline {
         }
         self.last_activity.insert(key, Instant::now());
 
-        if let Some(action) = self.try_reassemble(raw, parsed, &payload, key)? {
+        if let Some(action) = self.try_reassemble(raw, parsed, payload, key)? {
             return Ok(action);
         }
 
-        match fragmentation::parse_client_hello(&payload) {
+        match fragmentation::parse_client_hello(payload) {
             Ok(info) => {
                 let sni = match info.sni {
                     Some(loc) => payload[loc.name_start..loc.name_end].to_vec(),
                     None => return Ok(WireAction::Passthrough),
                 };
                 self.flows.remove(&key);
-                self.apply_client_hello(raw, parsed, &payload, &sni)
+                self.apply_client_hello(raw, parsed, payload, &sni)
             }
             Err(DpiGuardError::PacketTooShort { .. })
                 if payload.first() == Some(&0x16) && payload.get(1) == Some(&0x03) =>
             {
-                if self.hold(key, raw, parsed, payload) {
+                if self.hold(key, raw, parsed, payload.to_vec()) {
                     Ok(WireAction::Hold)
                 } else {
                     Ok(WireAction::Passthrough)
@@ -1022,18 +1022,36 @@ impl Pipeline {
             MutationProfile::Henan.as_str(),
             MutationProfile::NestedCloak.as_str(),
         ];
-        let chosen = self
-            .strategy
-            .select_best(&domain, &candidates)
-            .unwrap_or_else(|| self.settings.mutation_profile.clone());
+        // Empty-table fast path: with no recorded feedback every score read
+        // is 0, so `select_best` returns the first candidate whose score
+        // (0) can never beat cfg_score (0) — `deterministic` is always the
+        // configured profile and `select_rotating` always returns None.
+        // Skip the 7-candidate scan + 2 score reads (9 dashmap lookups and
+        // 18 String allocations per ClientHello) and produce the identical
+        // decision without touching the map.
+        let strategy_empty = self.strategy.is_empty();
+        let chosen = if strategy_empty {
+            self.settings.mutation_profile.clone()
+        } else {
+            self.strategy
+                .select_best(&domain, &candidates)
+                .unwrap_or_else(|| self.settings.mutation_profile.clone())
+        };
         // O(1) score reads: both used to run a full O(4096)-entry
         // `per_domain_scores` table scan per ClientHello (twice), plus a
         // discarded `select_best` whose only effect was inserting rows.
         // `score_of` reads the same values without creating entries.
-        let cfg_score = self
-            .strategy
-            .score_of(&domain, &self.settings.mutation_profile);
-        let chosen_score = self.strategy.score_of(&domain, &chosen);
+        let cfg_score = if strategy_empty {
+            0
+        } else {
+            self.strategy
+                .score_of(&domain, &self.settings.mutation_profile)
+        };
+        let chosen_score = if strategy_empty {
+            0
+        } else {
+            self.strategy.score_of(&domain, &chosen)
+        };
         let deterministic = if chosen_score > cfg_score {
             chosen
         } else {
@@ -1060,7 +1078,6 @@ impl Pipeline {
         let profile: MutationProfile = profile_name.parse().unwrap_or(MutationProfile::Stealth);
 
         let mutated = mutate_sni_full(sni, profile);
-        let mutated_str = String::from_utf8_lossy(&mutated).into_owned();
         let use_mutated = if profile.preserves_identity() {
             true
         } else if self.certs.is_empty() {
@@ -1070,6 +1087,10 @@ impl Pipeline {
             );
             false
         } else {
+            // Only the identity-breaking profiles need the mutated name as
+            // a string for cert matching — don't pay the allocation for
+            // the identity-preserving ones (everything except Aggressive).
+            let mutated_str = String::from_utf8_lossy(&mutated);
             match_sni_cert(&self.certs, &mutated_str)
         };
 

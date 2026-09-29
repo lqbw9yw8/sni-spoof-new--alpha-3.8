@@ -471,7 +471,9 @@ pub fn shuffle_cipher_suites_in_hello(record: &mut [u8]) -> Result<(), DpiGuardE
 /// `rebuild_with_payload`).
 pub fn fragment_sni_byte_chunk(record: &[u8]) -> Result<Vec<Vec<u8>>, DpiGuardError> {
     let (sni_start, sni_end) = calculate_smart_split_points(record)?;
-    let mut chunks = Vec::new();
+    // Exact capacity: prefix + one chunk per SNI byte + tail — no growth
+    // reallocations while pushing the per-byte segments.
+    let mut chunks = Vec::with_capacity(sni_end - sni_start + 2);
     if sni_start > 0 {
         chunks.push(record[..sni_start].to_vec());
     }

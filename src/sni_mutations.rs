@@ -123,11 +123,22 @@ pub fn insert_consecutive_dots(sni: &[u8]) -> Vec<u8> {
 }
 
 pub fn force_length_overflow(sni: &[u8]) -> Vec<u8> {
-    let mut out = sni.to_vec();
     let filler = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.";
-    while out.len() <= 255 {
-        out.splice(0..0, filler.iter().copied());
+    if sni.len() > 255 {
+        return sni.to_vec();
     }
+    // One pre-sized write replaces the old per-iteration `splice(0..0, ..)`
+    // which moved the whole buffer on every loop pass (quadratic memmove
+    // for a result the loop already knew the size of). k is the smallest
+    // count with `sni.len() + 33*k > 255`, matching the old loop's
+    // fixpoint, and the old prepend-in-a-loop produced filler^k || sni —
+    // same layout.
+    let k = (256 - sni.len()).div_ceil(filler.len());
+    let mut out = Vec::with_capacity(sni.len() + k * filler.len());
+    for _ in 0..k {
+        out.extend_from_slice(filler);
+    }
+    out.extend_from_slice(sni);
     out
 }
 
@@ -261,22 +272,22 @@ impl FromStr for MutationProfile {
 /// bytes to the mutated record bytes. Profiles are ordered lists of these.
 pub type MutationFn = fn(&[u8]) -> Vec<u8>;
 
-pub fn get_mutation_profile(profile: MutationProfile) -> Vec<MutationFn> {
+pub fn get_mutation_profile(profile: MutationProfile) -> &'static [MutationFn] {
     match profile {
         // GFW: cheap, identity-preserving. Real evasion is TCP
         // fragmentation + TTL decoys in the pipeline, not exploding SNI.
-        MutationProfile::ChinaGfw => vec![randomize_case_sni],
-        MutationProfile::RussiaDpi => vec![add_trailing_dot],
+        MutationProfile::ChinaGfw => &[randomize_case_sni],
+        MutationProfile::RussiaDpi => &[add_trailing_dot],
         // Whitespace / null / homoglyphs break real TLS stacks — not stealth.
-        MutationProfile::Stealth => vec![randomize_case_sni],
+        MutationProfile::Stealth => &[randomize_case_sni],
         // Regional: case + trailing dot - still identity-preserving but more entropy
-        MutationProfile::ChinaRegional => vec![randomize_case_sni, add_trailing_dot],
-        MutationProfile::Henan => vec![randomize_case_sni, add_trailing_dot],
+        MutationProfile::ChinaRegional => &[randomize_case_sni, add_trailing_dot],
+        MutationProfile::Henan => &[randomize_case_sni, add_trailing_dot],
         // NestedCloak: no byte-level mutations at all. The visible SNI is
         // replaced by the cover and the untouched real name is carried in
         // the hidden extension, so mutating bytes here would be pointless.
-        MutationProfile::NestedCloak => vec![],
-        MutationProfile::Aggressive => vec![
+        MutationProfile::NestedCloak => &[],
+        MutationProfile::Aggressive => &[
             inject_null_byte,
             explode_subdomains,
             randomize_case_sni,
